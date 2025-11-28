@@ -16,6 +16,7 @@ FACTOR_CO2E = 3.67
 FACTOR_BGB_SECO = 0.28
 AGB_FACTOR_A = 0.112
 AGB_FACTOR_B = 0.916
+FACTOR_KG_A_TON = 1000 # Constante para conversión
 
 # BASE DE DATOS INICIAL DE DENSIDADES (Se mantiene)
 DENSIDADES = {
@@ -34,6 +35,7 @@ FACTORES_CRECIMIENTO = {
 }
 
 # --- DATOS DE LA HUELLA CORPORATIVA (GAP CPSSA) - VALORES REALES 2024 ---
+# NOTA: Los valores de emisiones están en kg y se convertirán a Toneladas en la sección GAP
 EMISIONES_SEDES = {
     'Planta Pacasmayo': 1265154.79,
     'Planta Piura': 595763.31,
@@ -47,8 +49,10 @@ EMISIONES_SEDES = {
     'DISAC Tarapoto': 708.38
 }
 
-# --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO (Se mantienen) ---
+# --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO ---
+
 def calcular_co2_arbol(rho, dap_cm, altura_m):
+    """Calcula la biomasa, carbono y CO2e por árbol en KILOGRAMOS."""
     detalle = ""
     if rho <= 0 or dap_cm <= 0 or altura_m <= 0:
         detalle = "ERROR: Valores de entrada (DAP, Altura o Densidad) deben ser mayores a cero."
@@ -63,12 +67,13 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     # Detalle para la Pestaña 3 (Detalle Técnico)
     detalle += f"## 1. Biomasa Aérea (AGB) por Árbol\n"
     detalle += f"**Fórmula (kg):** `{AGB_FACTOR_A} * (ρ * DAP² * H)^{AGB_FACTOR_B}` (Chave 2014)\n"
-    detalle += f"**Sustitución:** `{AGB_FACTOR_A} * ({rho} * {dap_cm}² * {altura_m})^{AGB_FACTOR_B}`\n"
     detalle += f"**Resultado AGB (kg):** `{agb_kg:.4f}`\n\n"
     
+    # Se mantienen los valores en kg para el detalle
     return agb_kg, agb_kg * FACTOR_BGB_SECO, biomasa_total, co2e_total, detalle
 
 def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura, max_dap=100, max_altura=30):
+    """Simula el crecimiento y calcula el CO2e en TONELADAS."""
     resultados = []
     if df_inicial.empty: return pd.DataFrame()
 
@@ -85,16 +90,19 @@ def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura,
         if altura_actual < max_altura: altura_actual *= (1 + factor_altura)
         else: altura_actual = max_altura
             
-        _, _, _, co2e_uni, _ = calcular_co2_arbol(rho, dap_actual, altura_actual)
-        co2e_lote_anual = co2e_uni * cantidad_arboles
+        _, _, _, co2e_uni_kg, _ = calcular_co2_arbol(rho, dap_actual, altura_actual)
+        
+        # CO2e del lote anual en Toneladas
+        co2e_lote_anual_ton = (co2e_uni_kg * cantidad_arboles) / FACTOR_KG_A_TON
         
         resultados.append({
             'Año': anio, 'DAP (cm)': dap_actual, 'Altura (m)': altura_actual, 
-            'CO2e Lote (kg)': co2e_lote_anual,
+            'CO2e Lote (Ton)': co2e_lote_anual_ton,
         })
     
     df_simulacion = pd.DataFrame(resultados)
-    df_simulacion['CO2e Acumulado (Ton)'] = df_simulacion['CO2e Lote (kg)'].cumsum() / 1000
+    # Ya está en Toneladas, solo sumamos
+    df_simulacion['CO2e Acumulado (Ton)'] = df_simulacion['CO2e Lote (Ton)'].cumsum()
     
     return df_simulacion
 
@@ -116,13 +124,13 @@ def agregar_lote():
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero.")
         return
 
-    # Valores por unidad (por árbol)
-    _, _, biomasa_uni, co2e_uni, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
+    # Valores por unidad (por árbol en KG)
+    _, _, biomasa_uni_kg, co2e_uni_kg, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
     
-    # Valores por Lote (Unidad * Cantidad)
-    biomasa_lote = biomasa_uni * cantidad
-    carbono_lote = biomasa_uni * FACTOR_CARBONO * cantidad 
-    co2e_lote = co2e_uni * cantidad
+    # Valores por Lote convertidos a TONELADAS
+    biomasa_lote_ton = (biomasa_uni_kg * cantidad) / FACTOR_KG_A_TON
+    carbono_lote_ton = (biomasa_uni_kg * FACTOR_CARBONO * cantidad) / FACTOR_KG_A_TON
+    co2e_lote_ton = (co2e_uni_kg * cantidad) / FACTOR_KG_A_TON
     
     # Se genera la nueva fila asegurando la conversión explícita a los tipos correctos
     nueva_fila = pd.DataFrame([{
@@ -131,22 +139,25 @@ def agregar_lote():
         'DAP (cm)': float(dap), 
         'Altura (m)': float(altura), 
         'Densidad (ρ)': float(rho),
-        'Biomasa Lote (kg)': float(biomasa_lote), 
-        'Carbono Lote (kg)': float(carbono_lote), 
-        'CO2e Lote (kg)': float(co2e_lote),
+        'Biomasa Lote (Ton)': float(biomasa_lote_ton), 
+        'Carbono Lote (Ton)': float(carbono_lote_ton), 
+        'CO2e Lote (Ton)': float(co2e_lote_ton),
         'Detalle Cálculo': detalle_calculo
     }])
     
     # Definición de tipos para asegurar consistencia
     df_columns_types = {
         'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
-        'Densidad (ρ)': float, 'Biomasa Lote (kg)': float, 'Carbono Lote (kg)': float, 
-        'CO2e Lote (kg)': float, 'Detalle Cálculo': str
+        'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
+        'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
     }
     
     # Concatena la nueva fila con la tabla existente
     st.session_state.inventario_df = pd.concat([st.session_state.inventario_df.astype(df_columns_types), nueva_fila.astype(df_columns_types)], ignore_index=True)
-    st.session_state.total_co2e_kg = st.session_state.inventario_df['CO2e Lote (kg)'].sum()
+    
+    # CORRECCIÓN FINAL: FORZAR A NUMÉRICO ANTES DE AGREGAR LA SUMA 
+    co2e_col = pd.to_numeric(st.session_state.inventario_df['CO2e Lote (Ton)'], errors='coerce').fillna(0)
+    st.session_state.total_co2e_ton = co2e_col.sum()
     
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
@@ -157,18 +168,22 @@ def agregar_lote():
 def deshacer_ultimo_lote():
     if not st.session_state.inventario_df.empty:
         st.session_state.inventario_df = st.session_state.inventario_df.iloc[:-1]
-        st.session_state.total_co2e_kg = st.session_state.inventario_df['CO2e Lote (kg)'].sum()
+        
+        # Corrección defensiva para la suma
+        co2e_col = pd.to_numeric(st.session_state.inventario_df['CO2e Lote (Ton)'], errors='coerce').fillna(0)
+        st.session_state.total_co2e_ton = co2e_col.sum()
+        
         st.experimental_rerun()
 
 def limpiar_inventario():
-    # Inicialización del DataFrame con tipos corregidos
+    # Inicialización del DataFrame con tipos corregidos (en Ton)
     df_columns = {
         'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
-        'Densidad (ρ)': float, 'Biomasa Lote (kg)': float, 'Carbono Lote (kg)': float, 
-        'CO2e Lote (kg)': float, 'Detalle Cálculo': str
+        'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
+        'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
     }
     st.session_state.inventario_df = pd.DataFrame(columns=df_columns.keys()).astype(df_columns)
-    st.session_state.total_co2e_kg = 0.0
+    st.session_state.total_co2e_ton = 0.0
     st.experimental_rerun()
     
 def guardar_memoria():
@@ -178,13 +193,17 @@ def guardar_memoria():
         
     nombre_memoria = st.session_state.proyecto
     
+    # CORRECCIÓN FINAL: Forzar a numérico antes de agregar la suma de árboles
+    cantidad_col = pd.to_numeric(st.session_state.inventario_df['Cantidad'], errors='coerce').fillna(0)
+    total_arboles = cantidad_col.sum()
+    
     data_to_save = {
         'nombre_proyecto': nombre_memoria,
         'fecha_creacion': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
         'inventario_data': st.session_state.inventario_df.to_dict('records'),
-        'total_co2e_kg': st.session_state.total_co2e_kg,
+        'total_co2e_ton': st.session_state.total_co2e_ton, # Almacenado en Toneladas
         'hectareas': st.session_state.hectareas,
-        'total_arboles': st.session_state.inventario_df['Cantidad'].sum()
+        'total_arboles': total_arboles 
     }
     
     st.session_state.memorias_proyectos[nombre_memoria] = data_to_save
@@ -197,19 +216,19 @@ def generar_excel_memoria(memoria_data):
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    # 1. Hoja de Inventario Detallado
-    df_inventario.to_excel(writer, sheet_name='Inventario Detallado', index=False)
+    # 1. Hoja de Inventario Detallado (ya en Toneladas)
+    df_inventario.to_excel(writer, sheet_name='Inventario Detallado (Ton)', index=False)
     
     # 2. Hoja de Resumen
     df_resumen = pd.DataFrame({
-        'Métrica': ['Proyecto', 'Fecha', 'Hectáreas', 'Total Árboles', 'CO2e Total (kg)', 'CO2e Total (Ton)'],
+        'Métrica': ['Proyecto', 'Fecha', 'Hectáreas', 'Total Árboles', 'CO2e Total (Ton)', 'CO2e Total (kg)'],
         'Valor': [
             memoria_data['nombre_proyecto'],
             memoria_data['fecha_creacion'],
             memoria_data['hectareas'],
             memoria_data['total_arboles'],
-            f"{memoria_data['total_co2e_kg']:.2f}",
-            f"{memoria_data['total_co2e_kg'] / 1000:.2f}"
+            f"{memoria_data['total_co2e_ton']:.2f}", # Valor en Toneladas
+            f"{memoria_data['total_co2e_ton'] * FACTOR_KG_A_TON:.2f}" # Conversión a kg
         ]
     })
     df_resumen.to_excel(writer, sheet_name='Resumen Proyecto', index=False)
@@ -219,18 +238,17 @@ def generar_excel_memoria(memoria_data):
     return processed_data
 
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CORREGIDA) ---
-# Definición de tipos para el DataFrame de Inventario
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (EN TONELADAS) ---
 df_columns_types = {
     'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
-    'Densidad (ρ)': float, 'Biomasa Lote (kg)': float, 'Carbono Lote (kg)': float, 
-    'CO2e Lote (kg)': float, 'Detalle Cálculo': str
+    'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
+    'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
 }
 if 'inventario_df' not in st.session_state:
     st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
     
-# Se mantienen las inicializaciones de las otras variables de sesión
-if 'total_co2e_kg' not in st.session_state: st.session_state.total_co2e_kg = 0.0
+# Variable total en TONELADAS
+if 'total_co2e_ton' not in st.session_state: st.session_state.total_co2e_ton = 0.0
 if 'memorias_proyectos' not in st.session_state: st.session_state.memorias_proyectos = {} 
 if 'especies_bd' not in st.session_state: st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
 if 'proyecto' not in st.session_state: st.session_state.proyecto = ""
@@ -298,7 +316,10 @@ def render_calculadora_y_graficos():
 
         with col_totales:
             st.subheader("Inventario Acumulado")
-            total_arboles_registrados = st.session_state.inventario_df['Cantidad'].sum()
+            
+            # Asegura que la columna 'Cantidad' sea numérica antes de sumar
+            cantidad_col = pd.to_numeric(st.session_state.inventario_df['Cantidad'], errors='coerce').fillna(0)
+            total_arboles_registrados = cantidad_col.sum()
             
             if total_arboles_registrados > 0:
                 col_deshacer, col_limpiar = st.columns(2)
@@ -306,8 +327,8 @@ def render_calculadora_y_graficos():
                 col_limpiar.button("🗑️ Limpiar Inventario Total", on_click=limpiar_inventario, help="Elimina todas las entradas y reinicia el cálculo.")
 
                 st.markdown("---")
-                st.caption("Detalle de los Lotes Añadidos:")
-                st.dataframe(st.session_state.inventario_df.drop(columns=['Carbono Lote (kg)', 'Detalle Cálculo']), use_container_width=True, hide_index=True)
+                st.caption("Detalle de los Lotes Añadidos (Unidades en Toneladas):")
+                st.dataframe(st.session_state.inventario_df.drop(columns=['Carbono Lote (Ton)', 'Detalle Cálculo']), use_container_width=True, hide_index=True)
                 
             else:
                 st.info("Añade el primer lote de árboles para iniciar el inventario.")
@@ -318,22 +339,27 @@ def render_calculadora_y_graficos():
             st.warning("⚠️ No hay datos registrados.")
         else:
             df_inventario = st.session_state.inventario_df
-            total_co2e_kg = st.session_state.total_co2e_kg
-            total_arboles_registrados = df_inventario['Cantidad'].sum()
-            biomasa_total = df_inventario['Biomasa Lote (kg)'].sum()
-            co2e_ton = total_co2e_kg / 1000
+            total_co2e_ton = st.session_state.total_co2e_ton
+            
+            # Asegura que las columnas sean numéricas antes de sumar
+            cantidad_col = pd.to_numeric(df_inventario['Cantidad'], errors='coerce').fillna(0)
+            biomasa_col = pd.to_numeric(df_inventario['Biomasa Lote (Ton)'], errors='coerce').fillna(0)
+
+            total_arboles_registrados = cantidad_col.sum()
+            biomasa_total_ton = biomasa_col.sum()
 
             st.subheader("✅ Indicadores Clave del Proyecto")
             kpi1, kpi2, kpi3 = st.columns(3)
             kpi1.metric("Número de Árboles", f"{total_arboles_registrados:.0f}")
-            kpi2.metric("Biomasa Total", f"{biomasa_total:.2f} kg")
-            kpi3.metric("CO2e Capturado", f"**{co2e_ton:,.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
+            kpi2.metric("Biomasa Total", f"{biomasa_total_ton:,.2f} Ton")
+            kpi3.metric("CO2e Capturado", f"**{total_co2e_ton:,.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
             
+            # Data para gráficos (ya en toneladas)
             df_graficos = df_inventario.groupby('Especie').agg(
-                Total_CO2e_kg=('CO2e Lote (kg)', 'sum'),
+                Total_CO2e_Ton=('CO2e Lote (Ton)', 'sum'),
                 Conteo_Arboles=('Cantidad', 'sum')
             ).reset_index()
-            fig_co2e = px.bar(df_graficos, x='Especie', y='Total_CO2e_kg', title='CO2e Capturado por Especie (kg)', color='Total_CO2e_kg', color_continuous_scale=px.colors.sequential.Viridis)
+            fig_co2e = px.bar(df_graficos, x='Especie', y='Total_CO2e_Ton', title='CO2e Capturado por Especie (Ton)', color='Total_CO2e_Ton', color_continuous_scale=px.colors.sequential.Viridis)
             fig_arboles = px.pie(df_graficos, values='Conteo_Arboles', names='Especie', title='Conteo de Árboles por Especie', hole=0.3, color_discrete_sequence=px.colors.sequential.Plasma) 
             
             col_graf1, col_graf2 = st.columns(2)
@@ -341,7 +367,7 @@ def render_calculadora_y_graficos():
             with col_graf2: st.plotly_chart(fig_arboles, use_container_width=True)
 
     with tab3: # Detalle Técnico 
-        st.markdown("## 1.3 Detalle Técnico del Lote")
+        st.markdown("## 1.3 Detalle Técnico del Lote (Cálculo en kg)")
         if st.session_state.inventario_df.empty: st.info("Aún no hay lotes de árboles registrados.")
         else:
             lotes_info = [
@@ -411,7 +437,7 @@ def render_gestion_memorias():
     with col_resumen:
         st.metric("Fecha de Creación", memoria_data['fecha_creacion'])
         st.metric("Hectáreas Registradas", f"{memoria_data['hectareas']:.1f}")
-        st.metric("Total CO2e Capturado", f"**{memoria_data['total_co2e_kg'] / 1000:,.2f} Toneladas**")
+        st.metric("Total CO2e Capturado", f"**{memoria_data['total_co2e_ton']:,.2f} Toneladas**") # Muestra en Toneladas
         st.metric("Total de Árboles", f"{memoria_data['total_arboles']:.0f}")
 
     with col_descarga:
@@ -425,7 +451,7 @@ def render_gestion_memorias():
         )
 
     st.markdown("---")
-    st.caption("Inventario Detallado de la Memoria:")
+    st.caption("Inventario Detallado de la Memoria (Unidades en Toneladas):")
     st.dataframe(pd.DataFrame(memoria_data['inventario_data']).drop(columns=['Detalle Cálculo']), use_container_width=True)
 
 
@@ -447,7 +473,7 @@ def render_mapa():
 def render_gap_cpassa():
     st.title("📈 4. Análisis GAP de Mitigación Corporativa (CPSSA)")
     
-    co2e_proyecto_ton = st.session_state.total_co2e_kg / 1000.0 # CO2e del proyecto en Toneladas
+    co2e_proyecto_ton = st.session_state.total_co2e_ton # Ya está en Toneladas
     
     if co2e_proyecto_ton <= 0:
         st.warning("⚠️ El inventario del proyecto debe tener CO2e registrado (sección 1) para realizar este análisis.")
@@ -457,14 +483,15 @@ def render_gap_cpassa():
     
     sede_sel = st.selectbox("Seleccione la Sede (Huella Corporativa)", list(EMISIONES_SEDES.keys()))
     
-    emisiones_sede_ton = EMISIONES_SEDES[sede_sel]
+    # Conversión de emisiones de Sede a Toneladas
+    emisiones_sede_ton = EMISIONES_SEDES[sede_sel] / FACTOR_KG_A_TON
     
     st.markdown("---")
     
     col_sede, col_proyecto = st.columns(2)
     
     with col_sede:
-        st.metric(f"Emisiones Anuales de '{sede_sel}' (Ton CO2e)", f"**{emisiones_sede_ton:,.2f} Ton**", help="Valor extraído del Informe de Huella de Carbono Corporativa 2024.")
+        st.metric(f"Emisiones Anuales de '{sede_sel}' (Ton CO2e)", f"**{emisiones_sede_ton:,.2f} Ton**", help="Valor extraído del Informe de Huella de Carbono Corporativa 2024, convertido a Toneladas.")
     
     with col_proyecto:
         st.metric("Captura Total del Proyecto (Ton CO2e)", f"**{co2e_proyecto_ton:,.2f} Ton**", delta="Total del Inventario Actual")
@@ -544,7 +571,7 @@ def main_app():
     
     st.sidebar.markdown("---")
     st.sidebar.caption("Proyecto: " + (st.session_state.proyecto if st.session_state.proyecto else "Sin nombre"))
-    st.sidebar.metric("CO2e Inventario Total", f"{st.session_state.total_co2e_kg / 1000.0:,.2f} Ton")
+    st.sidebar.metric("CO2e Inventario Total", f"{st.session_state.total_co2e_ton:,.2f} Ton") # Muestra en Toneladas
     
     # 2. Renderizar la sección seleccionada
     if selection == "1. Cálculo de Captura":
@@ -559,7 +586,7 @@ def main_app():
         render_gestion_especie()
     
     # --- FOOTER (Común para todas las pestañas) ---
-    st.caption("Fórmula: AGB = 0.112 × (ρ × D² × H)^0.916 | Chave et al. (2014). Factores C=0.47, BGB=0.28, CO2e=3.67.")
+    st.caption("Fórmula: AGB = 0.112 × (ρ × D² × H)^0.916 | Chave et al. (2014). Factores C=0.47, BGB=0.28, CO2e=3.67. Unidades en Toneladas.")
 
 # --- LÍNEA VITAL DE EJECUCIÓN ---
 if __name__ == '__main__':
