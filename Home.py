@@ -35,7 +35,6 @@ FACTORES_CRECIMIENTO = {
 }
 
 # --- DATOS DE LA HUELLA CORPORATIVA (GAP CPSSA) - VALORES REALES 2024 ---
-# NOTA: Los valores de emisiones están en kg y se convertirán a Toneladas en la sección GAP
 EMISIONES_SEDES = {
     'Planta Pacasmayo': 1265154.79,
     'Planta Piura': 595763.31,
@@ -69,7 +68,6 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     detalle += f"**Fórmula (kg):** `{AGB_FACTOR_A} * (ρ * DAP² * H)^{AGB_FACTOR_B}` (Chave 2014)\n"
     detalle += f"**Resultado AGB (kg):** `{agb_kg:.4f}`\n\n"
     
-    # Se mantienen los valores en kg para el detalle
     return agb_kg, agb_kg * FACTOR_BGB_SECO, biomasa_total, co2e_total, detalle
 
 def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura, max_dap=100, max_altura=30):
@@ -101,7 +99,6 @@ def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura,
         })
     
     df_simulacion = pd.DataFrame(resultados)
-    # Ya está en Toneladas, solo sumamos
     df_simulacion['CO2e Acumulado (Ton)'] = df_simulacion['CO2e Lote (Ton)'].cumsum()
     
     return df_simulacion
@@ -155,7 +152,7 @@ def agregar_lote():
     # Concatena la nueva fila con la tabla existente
     st.session_state.inventario_df = pd.concat([st.session_state.inventario_df.astype(df_columns_types), nueva_fila.astype(df_columns_types)], ignore_index=True)
     
-    # CORRECCIÓN FINAL: FORZAR A NUMÉRICO ANTES DE AGREGAR LA SUMA 
+    # CORRECCIÓN DEFINITIVA: Forzar a numérico antes de agregar la suma 
     co2e_col = pd.to_numeric(st.session_state.inventario_df['CO2e Lote (Ton)'], errors='coerce').fillna(0)
     st.session_state.total_co2e_ton = co2e_col.sum()
     
@@ -193,7 +190,7 @@ def guardar_memoria():
         
     nombre_memoria = st.session_state.proyecto
     
-    # CORRECCIÓN FINAL: Forzar a numérico antes de agregar la suma de árboles
+    # CORRECCIÓN DEFINITIVA: Forzar a numérico antes de agregar la suma de árboles
     cantidad_col = pd.to_numeric(st.session_state.inventario_df['Cantidad'], errors='coerce').fillna(0)
     total_arboles = cantidad_col.sum()
     
@@ -338,15 +335,18 @@ def render_calculadora_y_graficos():
         if st.session_state.inventario_df.empty:
             st.warning("⚠️ No hay datos registrados.")
         else:
-            df_inventario = st.session_state.inventario_df
+            df_inventario = st.session_state.inventario_df.copy() # Usar una copia para el procesamiento local
             total_co2e_ton = st.session_state.total_co2e_ton
             
-            # Asegura que las columnas sean numéricas antes de sumar
-            cantidad_col = pd.to_numeric(df_inventario['Cantidad'], errors='coerce').fillna(0)
-            biomasa_col = pd.to_numeric(df_inventario['Biomasa Lote (Ton)'], errors='coerce').fillna(0)
-
-            total_arboles_registrados = cantidad_col.sum()
-            biomasa_total_ton = biomasa_col.sum()
+            # >>> CORRECCIÓN DEFINITIVA DE PANDAS TYPE ERROR EN GRAFICOS Y KPIS <<<
+            # Forzar las columnas a numéricas justo antes de la agregación.
+            df_inventario['Cantidad_Num'] = pd.to_numeric(df_inventario['Cantidad'], errors='coerce').fillna(0)
+            df_inventario['Biomasa_Ton'] = pd.to_numeric(df_inventario['Biomasa Lote (Ton)'], errors='coerce').fillna(0)
+            df_inventario['CO2e_Ton'] = pd.to_numeric(df_inventario['CO2e Lote (Ton)'], errors='coerce').fillna(0)
+            
+            # KPI Calculations
+            total_arboles_registrados = df_inventario['Cantidad_Num'].sum()
+            biomasa_total_ton = df_inventario['Biomasa_Ton'].sum()
 
             st.subheader("✅ Indicadores Clave del Proyecto")
             kpi1, kpi2, kpi3 = st.columns(3)
@@ -354,11 +354,12 @@ def render_calculadora_y_graficos():
             kpi2.metric("Biomasa Total", f"{biomasa_total_ton:,.2f} Ton")
             kpi3.metric("CO2e Capturado", f"**{total_co2e_ton:,.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
             
-            # Data para gráficos (ya en toneladas)
+            # Data para gráficos 
             df_graficos = df_inventario.groupby('Especie').agg(
-                Total_CO2e_Ton=('CO2e Lote (Ton)', 'sum'),
-                Conteo_Arboles=('Cantidad', 'sum')
+                Total_CO2e_Ton=('CO2e_Ton', 'sum'),
+                Conteo_Arboles=('Cantidad_Num', 'sum')
             ).reset_index()
+            
             fig_co2e = px.bar(df_graficos, x='Especie', y='Total_CO2e_Ton', title='CO2e Capturado por Especie (Ton)', color='Total_CO2e_Ton', color_continuous_scale=px.colors.sequential.Viridis)
             fig_arboles = px.pie(df_graficos, values='Conteo_Arboles', names='Especie', title='Conteo de Árboles por Especie', hole=0.3, color_discrete_sequence=px.colors.sequential.Plasma) 
             
