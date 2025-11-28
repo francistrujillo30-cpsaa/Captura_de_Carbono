@@ -152,7 +152,7 @@ def agregar_lote():
     # Concatena la nueva fila con la tabla existente
     st.session_state.inventario_df = pd.concat([st.session_state.inventario_df.astype(df_columns_types), nueva_fila.astype(df_columns_types)], ignore_index=True)
     
-    # CORRECCIÓN DEFINITIVA: Forzar a numérico antes de agregar la suma 
+    # CORRECCIÓN: Forzar a numérico antes de agregar la suma 
     co2e_col = pd.to_numeric(st.session_state.inventario_df['CO2e Lote (Ton)'], errors='coerce').fillna(0)
     st.session_state.total_co2e_ton = co2e_col.sum()
     
@@ -190,7 +190,7 @@ def guardar_memoria():
         
     nombre_memoria = st.session_state.proyecto
     
-    # CORRECCIÓN DEFINITIVA: Forzar a numérico antes de agregar la suma de árboles
+    # CORRECCIÓN: Forzar a numérico antes de agregar la suma de árboles
     cantidad_col = pd.to_numeric(st.session_state.inventario_df['Cantidad'], errors='coerce').fillna(0)
     total_arboles = cantidad_col.sum()
     
@@ -235,17 +235,29 @@ def generar_excel_memoria(memoria_data):
     return processed_data
 
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (EN TONELADAS) ---
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CON CORRECCIÓN DE TIPOS) ---
 df_columns_types = {
     'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
     'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
     'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
 }
+df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
+
 if 'inventario_df' not in st.session_state:
     st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
+else:
+    # CORRECCIÓN CRÍTICA: Forzar tipos numéricos al cargar la sesión
+    for col in df_columns_numeric:
+        # Usamos errors='coerce' para convertir cualquier valor no numérico (como una cadena vacía) a NaN, luego fillna(0)
+        st.session_state.inventario_df[col] = pd.to_numeric(st.session_state.inventario_df[col], errors='coerce').fillna(0)
+    st.session_state.inventario_df = st.session_state.inventario_df.astype(df_columns_types, errors='ignore') # Reaplicar tipos por si acaso
     
 # Variable total en TONELADAS
 if 'total_co2e_ton' not in st.session_state: st.session_state.total_co2e_ton = 0.0
+# Recalcular el total_co2e_ton de manera defensiva al inicio
+co2e_col_recalc = pd.to_numeric(st.session_state.inventario_df['CO2e Lote (Ton)'], errors='coerce').fillna(0)
+st.session_state.total_co2e_ton = co2e_col_recalc.sum()
+
 if 'memorias_proyectos' not in st.session_state: st.session_state.memorias_proyectos = {} 
 if 'especies_bd' not in st.session_state: st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
 if 'proyecto' not in st.session_state: st.session_state.proyecto = ""
@@ -320,7 +332,7 @@ def render_calculadora_y_graficos():
             
             if total_arboles_registrados > 0:
                 col_deshacer, col_limpiar = st.columns(2)
-                col_deshacer.button("↩️ Deshacer Último Lote", on_click=deshacer_ultimo_lote, help="Elimina la última fila añadida a la tabla.")
+                col_deshacer.button(↩️ Deshacer Último Lote", on_click=deshacer_ultimo_lote, help="Elimina la última fila añadida a la tabla.")
                 col_limpiar.button("🗑️ Limpiar Inventario Total", on_click=limpiar_inventario, help="Elimina todas las entradas y reinicia el cálculo.")
 
                 st.markdown("---")
