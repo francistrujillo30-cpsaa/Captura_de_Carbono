@@ -147,16 +147,15 @@ def agregar_lote():
         'Detalle Cálculo': detalle_calculo
     }]).astype(df_columns_types)
     
-    # Limpiar el DataFrame existente de cualquier degradación de tipo
+    # Limpiar el DataFrame existente de cualquier degradación de tipo (aunque ya se hace al inicio, es una doble defensa)
     df_actual = st.session_state.inventario_df.copy()
     for col in df_columns_numeric:
         df_actual[col] = pd.to_numeric(df_actual[col], errors='coerce').fillna(0)
     
-    # Concatena y actualiza el estado
+    # Concatena y actualiza el estado, asegurando los tipos finales
     st.session_state.inventario_df = pd.concat([df_actual, nueva_fila], ignore_index=True).astype(df_columns_types)
     
-    # Recalcular el total de forma segura
-    st.session_state.total_co2e_ton = st.session_state.inventario_df['CO2e Lote (Ton)'].sum()
+    # No se actualiza 'total_co2e_ton' aquí porque se eliminó esa variable.
     
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
@@ -167,16 +166,14 @@ def agregar_lote():
 def deshacer_ultimo_lote():
     if not st.session_state.inventario_df.empty:
         st.session_state.inventario_df = st.session_state.inventario_df.iloc[:-1]
-        st.session_state.total_co2e_ton = st.session_state.inventario_df['CO2e Lote (Ton)'].sum()
+        # Eliminamos la actualización de st.session_state.total_co2e_ton
         st.experimental_rerun()
 
 def limpiar_inventario():
     st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
-    st.session_state.total_co2e_ton = 0.0
+    # Eliminamos la actualización de st.session_state.total_co2e_ton
     st.experimental_rerun()
     
-# --- FUNCIÓN ELIMINADA: guardar_memoria (Se elimina porque introduce errores de tipo al serializar)
-
 def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton):
     # Función de descarga modificada para usar los datos actuales del inventario
     fecha = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -205,6 +202,13 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     processed_data = output.getvalue()
     return processed_data
 
+# --- FUNCIÓN DE CÁLCULO SEGURO DEL TOTAL (LA SOLUCIÓN CRÍTICA) ---
+def get_co2e_total_seguro(df):
+    """Calcula la suma total de CO2e Lote (Ton) de forma segura."""
+    # Aplicamos la conversión numérica justo antes de la suma.
+    co2e_col = pd.to_numeric(df['CO2e Lote (Ton)'], errors='coerce').fillna(0)
+    return co2e_col.sum()
+
 
 # --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (SIMPLIFICADA) ---
 if 'inventario_df' not in st.session_state:
@@ -219,8 +223,7 @@ else:
     except:
         st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
 
-# Recalcular el total CO2e de forma segura desde el DataFrame limpio
-st.session_state.total_co2e_ton = st.session_state.inventario_df['CO2e Lote (Ton)'].sum()
+# Eliminamos la variable st.session_state.total_co2e_ton para forzar el cálculo directo
 
 
 # Reiniciamos las demás variables (Se eliminan las 'memorias_proyectos')
@@ -241,6 +244,9 @@ if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
 def render_calculadora_y_graficos():
     st.title("🌳 1. Cálculo de Captura de Carbono")
     
+    # --- CÁLCULO SEGURO DEL TOTAL A USAR ---
+    co2e_proyecto_ton = get_co2e_total_seguro(st.session_state.inventario_df)
+
     # --- INFORMACIÓN DEL PROYECTO ---
     st.subheader("📋 Información del Proyecto")
     col_proj, col_hectareas = st.columns([2, 1])
@@ -285,7 +291,6 @@ def render_calculadora_y_graficos():
         with col_totales:
             st.subheader("Inventario Acumulado")
             
-            # Cálculo de total de árboles (siempre seguro, ya que el DF está limpio)
             total_arboles_registrados = st.session_state.inventario_df['Cantidad'].sum()
             
             if total_arboles_registrados > 0:
@@ -297,14 +302,13 @@ def render_calculadora_y_graficos():
                 col_excel, _ = st.columns([1, 4])
                 
                 df_inventario_descarga = st.session_state.inventario_df.copy()
-                total_co2e_ton_descarga = st.session_state.total_co2e_ton
                 
                 excel_data = generar_excel_memoria(
                     df_inventario_descarga, 
                     st.session_state.proyecto, 
                     st.session_state.hectareas, 
                     total_arboles_registrados, 
-                    total_co2e_ton_descarga
+                    co2e_proyecto_ton # Usa el valor calculado de forma segura
                 )
                 
                 with col_excel:
@@ -329,7 +333,6 @@ def render_calculadora_y_graficos():
             st.warning("⚠️ No hay datos registrados.")
         else:
             df_inventario = st.session_state.inventario_df.copy()
-            total_co2e_ton = st.session_state.total_co2e_ton
             
             # Cálculo seguro de KPIs
             total_arboles_registrados = df_inventario['Cantidad'].sum()
@@ -339,7 +342,7 @@ def render_calculadora_y_graficos():
             kpi1, kpi2, kpi3 = st.columns(3)
             kpi1.metric("Número de Árboles", f"{total_arboles_registrados:.0f}")
             kpi2.metric("Biomasa Total", f"{biomasa_total_ton:,.2f} Ton")
-            kpi3.metric("CO2e Capturado", f"**{total_co2e_ton:,.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
+            kpi3.metric("CO2e Capturado", f"**{co2e_proyecto_ton:,.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
             
             # Data para gráficos 
             df_graficos = df_inventario.groupby('Especie').agg(
@@ -428,7 +431,8 @@ def render_mapa():
 def render_gap_cpassa():
     st.title("📈 4. Análisis GAP de Mitigación Corporativa (CPSSA)")
     
-    co2e_proyecto_ton = st.session_state.total_co2e_ton 
+    # CÁLCULO SEGURO DEL TOTAL
+    co2e_proyecto_ton = get_co2e_total_seguro(st.session_state.inventario_df)
     
     if co2e_proyecto_ton <= 0:
         st.warning("⚠️ El inventario del proyecto debe tener CO2e registrado (sección 1) para realizar este análisis.")
@@ -508,9 +512,12 @@ def render_gestion_especie():
 # -------------------------------------------------
 def main_app():
     
+    # 1. CÁLCULO SEGURO DEL TOTAL PARA LA BARRA LATERAL
+    co2e_total_sidebar = get_co2e_total_seguro(st.session_state.inventario_df)
+    
+    # 2. Definir la navegación en la barra lateral
     st.sidebar.title("Menú de Navegación")
     
-    # Menú sin la sección 2
     menu_options = [
         "1. Cálculo de Captura", 
         "3. Mapa", 
@@ -522,11 +529,11 @@ def main_app():
     
     st.sidebar.markdown("---")
     st.sidebar.caption("Proyecto: " + (st.session_state.proyecto if st.session_state.proyecto else "Sin nombre"))
-    st.sidebar.metric("CO2e Inventario Total", f"{st.session_state.total_co2e_ton:,.2f} Ton")
+    st.sidebar.metric("CO2e Inventario Total", f"{co2e_total_sidebar:,.2f} Ton") # Uso de la variable calculada segura
     
+    # 3. Renderizar la sección seleccionada
     if selection == "1. Cálculo de Captura":
         render_calculadora_y_graficos()
-    # Se omite la opción 2 para que no aparezca el error
     elif selection == "3. Mapa":
         render_mapa()
     elif selection == "4. GAP CPSSA":
@@ -534,6 +541,7 @@ def main_app():
     elif selection == "5. Gestión de Especie":
         render_gestion_especie()
     
+    # --- FOOTER (Común para todas las pestañas) ---
     st.caption("Fórmula: AGB = 0.112 × (ρ × D² × H)^0.916 | Chave et al. (2014). Factores C=0.47, BGB=0.28, CO2e=3.67. Unidades en Toneladas.")
 
 # --- LÍNEA VITAL DE EJECUCIÓN ---
