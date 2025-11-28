@@ -332,7 +332,7 @@ def render_calculadora_y_graficos():
             
             if total_arboles_registrados > 0:
                 col_deshacer, col_limpiar = st.columns(2)
-                col_deshacer.button(↩️ Deshacer Último Lote", on_click=deshacer_ultimo_lote, help="Elimina la última fila añadida a la tabla.")
+                col_deshacer.button("↩️ Deshacer Último Lote", on_click=deshacer_ultimo_lote, help="Elimina la última fila añadida a la tabla.")
                 col_limpiar.button("🗑️ Limpiar Inventario Total", on_click=limpiar_inventario, help="Elimina todas las entradas y reinicia el cálculo.")
 
                 st.markdown("---")
