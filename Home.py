@@ -34,7 +34,6 @@ FACTORES_CRECIMIENTO = {
 }
 
 # --- DATOS DE LA HUELLA CORPORATIVA (GAP CPSSA) - VALORES REALES 2024 ---
-# Extraídos del "Informe FINAL 2024 - HCC.docx_10.04.2025.pdf" (en Toneladas CO2e)
 EMISIONES_SEDES = {
     'Planta Pacasmayo': 1265154.79,
     'Planta Piura': 595763.31,
@@ -57,11 +56,8 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
         
     agb_kg = AGB_FACTOR_A * ((rho * (dap_cm**2) * altura_m)**AGB_FACTOR_B)
     
-    # Biomasa Total (Aérea + Subterránea)
     biomasa_total = agb_kg * (1 + FACTOR_BGB_SECO)
-    # Carbono Total (Biomasa Total * Factor Carbono)
     carbono_total = biomasa_total * FACTOR_CARBONO
-    # CO2e Total (Carbono Total * Factor CO2e)
     co2e_total = carbono_total * FACTOR_CO2E
     
     # Detalle para la Pestaña 3 (Detalle Técnico)
@@ -102,6 +98,8 @@ def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura,
     
     return df_simulacion
 
+
+# --- FUNCIÓN CORREGIDA: AGREGAR LOTE ---
 def agregar_lote():
     especie = st.session_state.especie_sel
     cantidad = st.session_state.cantidad_input
@@ -118,19 +116,36 @@ def agregar_lote():
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero.")
         return
 
-    _, _, _, co2e_uni, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
+    # Valores por unidad (por árbol)
+    _, _, biomasa_uni, co2e_uni, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
     
-    # Recalcular valores de lote
-    biomasa_lote = co2e_uni * cantidad / (FACTOR_CARBONO * FACTOR_CO2E) # Biomasa Lote = CO2e Lote / (C * CO2e)
-    carbono_lote = biomasa_lote * FACTOR_CARBONO
+    # Valores por Lote (Unidad * Cantidad)
+    biomasa_lote = biomasa_uni * cantidad
+    carbono_lote = biomasa_uni * FACTOR_CARBONO * cantidad 
     co2e_lote = co2e_uni * cantidad
-
+    
+    # Se genera la nueva fila asegurando la conversión explícita a los tipos correctos
     nueva_fila = pd.DataFrame([{
-        'Especie': especie, 'Cantidad': cantidad, 'DAP (cm)': dap, 'Altura (m)': altura, 'Densidad (ρ)': rho,
-        'Biomasa Lote (kg)': biomasa_lote, 'Carbono Lote (kg)': carbono_lote, 'CO2e Lote (kg)': co2e_lote,
+        'Especie': especie, 
+        'Cantidad': int(cantidad), 
+        'DAP (cm)': float(dap), 
+        'Altura (m)': float(altura), 
+        'Densidad (ρ)': float(rho),
+        'Biomasa Lote (kg)': float(biomasa_lote), 
+        'Carbono Lote (kg)': float(carbono_lote), 
+        'CO2e Lote (kg)': float(co2e_lote),
         'Detalle Cálculo': detalle_calculo
     }])
-    st.session_state.inventario_df = pd.concat([st.session_state.inventario_df, nueva_fila], ignore_index=True)
+    
+    # Definición de tipos para asegurar consistencia
+    df_columns_types = {
+        'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
+        'Densidad (ρ)': float, 'Biomasa Lote (kg)': float, 'Carbono Lote (kg)': float, 
+        'CO2e Lote (kg)': float, 'Detalle Cálculo': str
+    }
+    
+    # Concatena la nueva fila con la tabla existente
+    st.session_state.inventario_df = pd.concat([st.session_state.inventario_df.astype(df_columns_types), nueva_fila.astype(df_columns_types)], ignore_index=True)
     st.session_state.total_co2e_kg = st.session_state.inventario_df['CO2e Lote (kg)'].sum()
     
     st.session_state.cantidad_input = 0
@@ -146,7 +161,13 @@ def deshacer_ultimo_lote():
         st.experimental_rerun()
 
 def limpiar_inventario():
-    st.session_state.inventario_df = pd.DataFrame(columns=['Especie', 'Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Biomasa Lote (kg)', 'Carbono Lote (kg)', 'CO2e Lote (kg)', 'Detalle Cálculo'])
+    # Inicialización del DataFrame con tipos corregidos
+    df_columns = {
+        'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
+        'Densidad (ρ)': float, 'Biomasa Lote (kg)': float, 'Carbono Lote (kg)': float, 
+        'CO2e Lote (kg)': float, 'Detalle Cálculo': str
+    }
+    st.session_state.inventario_df = pd.DataFrame(columns=df_columns.keys()).astype(df_columns)
     st.session_state.total_co2e_kg = 0.0
     st.experimental_rerun()
     
@@ -170,10 +191,10 @@ def guardar_memoria():
     st.success(f"Memoria de proyecto '{nombre_memoria}' guardada exitosamente.")
     
 def generar_excel_memoria(memoria_data):
+    # Asegurarse de que el DataFrame se cree con tipos correctos antes de exportar
     df_inventario = pd.DataFrame(memoria_data['inventario_data'])
     
     output = io.BytesIO()
-    # Se debe usar 'xlsxwriter' como engine para compatibilidad en entornos sin librerías GUI.
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
     # 1. Hoja de Inventario Detallado
@@ -198,8 +219,17 @@ def generar_excel_memoria(memoria_data):
     return processed_data
 
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (Verificación de claves) ---
-if 'inventario_df' not in st.session_state: st.session_state.inventario_df = pd.DataFrame(columns=['Especie', 'Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Biomasa Lote (kg)', 'Carbono Lote (kg)', 'CO2e Lote (kg)', 'Detalle Cálculo'])
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CORREGIDA) ---
+# Definición de tipos para el DataFrame de Inventario
+df_columns_types = {
+    'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
+    'Densidad (ρ)': float, 'Biomasa Lote (kg)': float, 'Carbono Lote (kg)': float, 
+    'CO2e Lote (kg)': float, 'Detalle Cálculo': str
+}
+if 'inventario_df' not in st.session_state:
+    st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
+    
+# Se mantienen las inicializaciones de las otras variables de sesión
 if 'total_co2e_kg' not in st.session_state: st.session_state.total_co2e_kg = 0.0
 if 'memorias_proyectos' not in st.session_state: st.session_state.memorias_proyectos = {} 
 if 'especies_bd' not in st.session_state: st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
@@ -297,7 +327,7 @@ def render_calculadora_y_graficos():
             kpi1, kpi2, kpi3 = st.columns(3)
             kpi1.metric("Número de Árboles", f"{total_arboles_registrados:.0f}")
             kpi2.metric("Biomasa Total", f"{biomasa_total:.2f} kg")
-            kpi3.metric("CO2e Capturado", f"**{co2e_ton:.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
+            kpi3.metric("CO2e Capturado", f"**{co2e_ton:,.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
             
             df_graficos = df_inventario.groupby('Especie').agg(
                 Total_CO2e_kg=('CO2e Lote (kg)', 'sum'),
@@ -354,7 +384,7 @@ def render_calculadora_y_graficos():
             st.subheader(f"Resultados de la Simulación a {anios_simulacion} Años")
             if not df_simulacion.empty:
                 co2e_final = df_simulacion['CO2e Acumulado (Ton)'].iloc[-1]
-                st.metric("Potencial de Captura Total (Toneladas CO2e)", f"**{co2e_final:.2f} Ton**")
+                st.metric("Potencial de Captura Total (Toneladas CO2e)", f"**{co2e_final:,.2f} Ton**")
                 fig_proj = px.line(df_simulacion, x='Año', y='CO2e Acumulado (Ton)', title='Captura Acumulada de CO2e vs. Tiempo', labels={'CO2e Acumulado (Ton)': 'CO2e Acumulado (Ton)', 'Año': 'Año'}, markers=True)
                 st.plotly_chart(fig_proj, use_container_width=True)
                 st.caption("Detalle Anual de la Simulación:")
@@ -381,7 +411,7 @@ def render_gestion_memorias():
     with col_resumen:
         st.metric("Fecha de Creación", memoria_data['fecha_creacion'])
         st.metric("Hectáreas Registradas", f"{memoria_data['hectareas']:.1f}")
-        st.metric("Total CO2e Capturado", f"**{memoria_data['total_co2e_kg'] / 1000:.2f} Toneladas**")
+        st.metric("Total CO2e Capturado", f"**{memoria_data['total_co2e_kg'] / 1000:,.2f} Toneladas**")
         st.metric("Total de Árboles", f"{memoria_data['total_arboles']:.0f}")
 
     with col_descarga:
@@ -411,10 +441,9 @@ def render_mapa():
     m = folium.Map(location=[lat, lon], zoom_start=zoom)
     folium.Marker([lat, lon], popup=st.session_state.proyecto if st.session_state.proyecto else 'Ubicación del Proyecto').add_to(m)
     
-    # Renderizar el mapa de Folium
     folium_static(m) 
 
-# --- 4. GAP CPSSA (ACTUALIZADO CON DATOS REALES) ---
+# --- 4. GAP CPSSA ---
 def render_gap_cpassa():
     st.title("📈 4. Análisis GAP de Mitigación Corporativa (CPSSA)")
     
@@ -515,7 +544,7 @@ def main_app():
     
     st.sidebar.markdown("---")
     st.sidebar.caption("Proyecto: " + (st.session_state.proyecto if st.session_state.proyecto else "Sin nombre"))
-    st.sidebar.metric("CO2e Inventario Total", f"{st.session_state.total_co2e_kg / 1000.0:.2f} Ton")
+    st.sidebar.metric("CO2e Inventario Total", f"{st.session_state.total_co2e_kg / 1000.0:,.2f} Ton")
     
     # 2. Renderizar la sección seleccionada
     if selection == "1. Cálculo de Captura":
