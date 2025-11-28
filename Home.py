@@ -54,6 +54,7 @@ df_columns_types = {
     'Densidad (ρ)': float, 'Detalle Cálculo': str 
 }
 df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)']
+columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
 
 
 # --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO ---
@@ -78,19 +79,19 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     return agb_kg, agb_kg * FACTOR_BGB_SECO, biomasa_total, co2e_total, detalle
 
 # --- FUNCIÓN DE RECÁLCULO SEGURO (CRÍTICA) ---
-def recalcular_inventario_completo(df_base):
+def recalcular_inventario_completo(inventario_list):
     """
-    Toma el DataFrame de entradas y calcula todas las salidas de CO2e, Biomasa y Carbono.
+    Toma la lista de entradas (List[Dict]) y genera un DataFrame completo y limpio.
     """
-    columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
-    
-    if df_base.empty:
-        # Devolver un DF vacío con todas las columnas necesarias para el procesamiento
+    if not inventario_list:
+        # Devuelve un DF vacío con todas las columnas necesarias
         return pd.DataFrame(columns=list(df_columns_types.keys()) + columnas_salida).astype({**df_columns_types, **dict.fromkeys(columnas_salida, float)})
 
+    # CRÍTICO: Creamos el DataFrame solo aquí, a partir de la lista estable.
+    df_base = pd.DataFrame(inventario_list)
     df_calculado = df_base.copy()
     
-    # 1. Asegurar tipos de entrada antes de iterar
+    # 1. Asegurar tipos de entrada (aunque la lista es robusta, este es un paso final de seguridad)
     for col in df_columns_numeric:
         df_calculado[col] = pd.to_numeric(df_calculado[col], errors='coerce').fillna(0)
     
@@ -185,48 +186,41 @@ def agregar_lote():
     # Usamos calcular_co2_arbol para obtener el Detalle Cálculo
     _, _, _, _, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
     
-    # Generar la nueva fila SÓLO CON ENTRADAS (y Detalle Cálculo)
-    nueva_fila = pd.DataFrame([{
+    # CRÍTICO: Generar la nueva fila SÓLO COMO UN DICCIONARIO PYTHON (sin DataFrame)
+    nueva_fila_dict = {
         'Especie': especie, 
         'Cantidad': int(cantidad), 
         'DAP (cm)': float(dap), 
         'Altura (m)': float(altura), 
         'Densidad (ρ)': float(rho),
         'Detalle Cálculo': detalle_calculo
-    }]).astype(df_columns_types)
+    }
     
-    # Limpiar el DataFrame existente de cualquier degradación de tipo
-    df_actual = st.session_state.inventario_df.copy()
-    for col in df_columns_numeric:
-        df_actual[col] = pd.to_numeric(df_actual[col], errors='coerce').fillna(0)
-    
-    # Concatena y actualiza el estado (solo entradas)
-    st.session_state.inventario_df = pd.concat([df_actual, nueva_fila], ignore_index=True).astype(df_columns_types)
+    # CRÍTICO: Añadir a la lista en el estado de sesión (native Python list)
+    st.session_state.inventario_list.append(nueva_fila_dict)
     
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
     st.session_state.altura_slider = 0.0
     st.session_state.especie_sel = list(DENSIDADES.keys())[0]
     
-    # Línea 186
+    # Línea 232: Ahora, este rerun debería ser exitoso con datos estables.
     st.experimental_rerun() 
     
 def deshacer_ultimo_lote():
-    if not st.session_state.inventario_df.empty:
-        st.session_state.inventario_df = st.session_state.inventario_df.iloc[:-1]
+    if st.session_state.inventario_list:
+        st.session_state.inventario_list.pop() # Eliminar el último diccionario de la lista
         st.experimental_rerun()
 
 def limpiar_inventario():
-    st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
+    st.session_state.inventario_list = [] # Resetear a lista vacía
     st.experimental_rerun()
 
 def reiniciar_app_completo():
     """Borra completamente todos los elementos del estado de sesión."""
-    # Usamos una copia de las claves para poder iterar y borrar sin problemas de concurrencia
     keys_to_delete = list(st.session_state.keys())
     for key in keys_to_delete:
         del st.session_state[key]
-    # Línea 232
     st.experimental_rerun()
 
     
@@ -259,46 +253,28 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     return processed_data
 
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (MODIFICADA PARA MÁXIMA ROBUSTEZ) ---
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (REVISADA) ---
 def inicializar_estado_de_sesion():
-    # 1. Inicializar todas las variables si es la primera ejecución
-    if 'inventario_df' not in st.session_state:
-        st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
-        st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
-        st.session_state.proyecto = ""
-        st.session_state.hectareas = 0.0
-        st.session_state.dap_slider = 0.0
-        st.session_state.altura_slider = 0.0
-        st.session_state.especie_sel = list(DENSIDADES.keys())[0]
-        st.session_state.cantidad_input = 0
-        return
-        
-    # 2. Si ya existen, aplicar defensa al DataFrame
-    temp_df = pd.DataFrame(st.session_state.inventario_df).copy()
+    # CRÍTICO: Inicializar el inventario como una lista nativa de Python
+    if 'inventario_list' not in st.session_state:
+        st.session_state.inventario_list = [] 
     
-    # 2.1. Intentamos forzar los tipos de las columnas críticas
-    corruption_detected = False
-    for col in df_columns_numeric:
-        original_dtype = temp_df[col].dtype
-        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').fillna(0)
-        # Comprobar si hubo conversión forzada (indica corrupción)
-        if temp_df[col].isnull().any() or (temp_df[col].dtype != original_dtype and temp_df[col].dtype != np.dtype('float64')):
-             corruption_detected = True
+    # Inicialización de otras variables
+    if 'especies_bd' not in st.session_state: 
+        st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
+    if 'proyecto' not in st.session_state: st.session_state.proyecto = ""
+    if 'hectareas' not in st.session_state: st.session_state.hectareas = 0.0
+    if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 0.0
+    if 'altura_slider' not in st.session_state: st.session_state.altura_slider = 0.0
+    if 'especie_sel' not in st.session_state: st.session_state.especie_sel = list(DENSIDADES.keys())[0]
+    if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
 
-    # 2.2. Si faltan columnas o se detectó corrupción, reiniciamos el DF
-    missing_cols = set(df_columns_types.keys()) - set(temp_df.columns)
-    if missing_cols or corruption_detected:
-        if not temp_df.empty: 
-            st.warning(f"⚠️ **Advertencia de Corrupción de Datos:** Inventario reiniciado por problemas de tipos de datos o columnas faltantes. (Corrupción detectada: {corruption_detected})")
+    # Defensa contra versiones antiguas: si existe el DF corrupto, lo borramos.
+    if 'inventario_df' in st.session_state:
+        del st.session_state.inventario_df
+        st.warning("⚠️ Se detectó y eliminó una variable de sesión antigua (inventario_df).")
+        st.experimental_rerun()
         
-        # Reestablecer solo el DF corrupto a un estado limpio.
-        st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
-        st.experimental_rerun() # Forzamos el re-render con el DF limpio
-
-    else:
-        # 2.3. Si todo está bien, guardamos el DF con tipos asegurados
-        st.session_state.inventario_df = temp_df.astype(df_columns_types, errors='ignore')
-
 inicializar_estado_de_sesion()
 
 # -------------------------------------------------
@@ -309,8 +285,8 @@ inicializar_estado_de_sesion()
 def render_calculadora_y_graficos():
     st.title("🌳 1. Cálculo de Captura de Carbono")
     
-    # 1. CÁLCULO SEGURO DEL INVENTARIO COMPLETO Y TOTAL
-    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_df)
+    # 1. CÁLCULO SEGURO DEL INVENTARIO COMPLETO Y TOTAL (desde la lista)
+    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
 
     # --- INFORMACIÓN DEL PROYECTO ---
@@ -357,7 +333,8 @@ def render_calculadora_y_graficos():
         with col_totales:
             st.subheader("Inventario Acumulado")
             
-            total_arboles_registrados = st.session_state.inventario_df['Cantidad'].sum()
+            # CRÍTICO: Contar desde la lista
+            total_arboles_registrados = sum(item['Cantidad'] for item in st.session_state.inventario_list)
             
             if total_arboles_registrados > 0:
                 col_deshacer, col_limpiar = st.columns(2)
@@ -424,28 +401,31 @@ def render_calculadora_y_graficos():
 
     with tab3: # Detalle Técnico 
         st.markdown("## 1.3 Detalle Técnico del Lote (Cálculo en kg)")
-        if st.session_state.inventario_df.empty: st.info("Aún no hay lotes de árboles registrados.")
+        if not st.session_state.inventario_list: st.info("Aún no hay lotes de árboles registrados.")
         else:
+            # CRÍTICO: Usar la lista para mostrar la info del lote
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP: {row['DAP (cm)']:.1f} cm" 
-                for i, row in st.session_state.inventario_df.iterrows()
+                for i, row in enumerate(st.session_state.inventario_list)
             ]
             lote_seleccionado_index = st.selectbox("Seleccione el Lote para Inspeccionar el Cálculo:", options=range(len(lotes_info)), format_func=lambda x: lotes_info[x], key='detalle_lote_select')
             st.markdown("---")
-            detalle_lote = st.session_state.inventario_df.iloc[lote_seleccionado_index]['Detalle Cálculo']
+            detalle_lote = st.session_state.inventario_list[lote_seleccionado_index]['Detalle Cálculo']
             st.markdown(f"### Detalles del Lote {lote_seleccionado_index + 1}: {lotes_info[lote_seleccionado_index]}")
             st.code(detalle_lote, language='markdown')
 
     with tab4: # Potencial de Crecimiento
         st.markdown("## 1.4 Simulación de Potencial de Captura a Largo Plazo")
-        if st.session_state.inventario_df.empty: st.info("Por favor, registre al menos un lote de árboles para iniciar la simulación.")
+        if not st.session_state.inventario_list: st.info("Por favor, registre al menos un lote de árboles para iniciar la simulación.")
         else:
-            df_inventario = st.session_state.inventario_df
+            df_inventario = df_inventario_completo # Usar el DF completo calculado
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
-                for i, row in df_inventario.iterrows()
+                for i, row in st.session_state.inventario_list
             ]
             lote_sim_index = st.selectbox("Seleccione el Lote para la Proyección de Crecimiento:", options=range(len(lotes_info)), format_func=lambda x: lotes_info[x], key='sim_lote_select')
+            
+            # Usar el DataFrame calculado para simular
             lote_seleccionado = df_inventario.iloc[[lote_sim_index]]
             especie_sim = lote_seleccionado['Especie'].iloc[0]
 
@@ -497,7 +477,7 @@ def render_gap_cpassa():
     st.title("📈 4. Análisis GAP de Mitigación Corporativa (CPSSA)")
     
     # CÁLCULO SEGURO DEL TOTAL
-    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_df)
+    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
     
     if co2e_proyecto_ton <= 0:
@@ -579,7 +559,7 @@ def render_gestion_especie():
 def main_app():
     
     # 1. CÁLCULO SEGURO DEL INVENTARIO COMPLETO Y TOTAL
-    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_df)
+    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_total_sidebar = get_co2e_total_seguro(df_inventario_completo)
     
     # 2. Definir la navegación en la barra lateral
