@@ -48,13 +48,12 @@ EMISIONES_SEDES = {
     'DISAC Tarapoto': 708.38
 }
 
-# --- DEFINICIÓN DE TIPOS DE COLUMNAS ---
+# --- DEFINICIÓN DE TIPOS DE COLUMNAS (SOLO ENTRADAS) ---
 df_columns_types = {
     'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
-    'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
-    'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
+    'Densidad (ρ)': float, 'Detalle Cálculo': str 
 }
-df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
+df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)']
 
 
 # --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO ---
@@ -77,6 +76,62 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     detalle += f"**Resultado AGB (kg):** `{agb_kg:.4f}`\n\n"
     
     return agb_kg, agb_kg * FACTOR_BGB_SECO, biomasa_total, co2e_total, detalle
+
+# --- FUNCIÓN DE RECÁLCULO SEGURO (CRÍTICA) ---
+def recalcular_inventario_completo(df_base):
+    """
+    Toma el DataFrame de entradas (st.session_state.inventario_df) y calcula 
+    todas las salidas de CO2e, Biomasa y Carbono, garantizando tipos float.
+    """
+    columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
+    
+    if df_base.empty:
+        # Devolver un DF vacío con todas las columnas necesarias para el procesamiento
+        return pd.DataFrame(columns=list(df_columns_types.keys()) + columnas_salida).astype({**df_columns_types, **dict.fromkeys(columnas_salida, float)})
+
+    df_calculado = df_base.copy()
+    
+    # 1. Asegurar tipos de entrada antes de iterar
+    for col in df_columns_numeric:
+        df_calculado[col] = pd.to_numeric(df_calculado[col], errors='coerce').fillna(0)
+    
+    resultados_calculo = []
+    
+    # 2. Iterar sobre las filas de entrada
+    for _, row in df_calculado.iterrows():
+        rho = row['Densidad (ρ)']
+        dap = row['DAP (cm)']
+        altura = row['Altura (m)']
+        cantidad = row['Cantidad']
+        
+        # 3. Recalcular las métricas
+        _, _, biomasa_uni_kg, co2e_uni_kg, _ = calcular_co2_arbol(rho, dap, altura)
+        
+        biomasa_lote_ton = (biomasa_uni_kg * cantidad) / FACTOR_KG_A_TON
+        carbono_lote_ton = (biomasa_uni_kg * FACTOR_CARBONO * cantidad) / FACTOR_KG_A_TON
+        co2e_lote_ton = (co2e_uni_kg * cantidad) / FACTOR_KG_A_TON
+        
+        resultados_calculo.append({
+            'Biomasa Lote (Ton)': float(biomasa_lote_ton), 
+            'Carbono Lote (Ton)': float(carbono_lote_ton), 
+            'CO2e Lote (Ton)': float(co2e_lote_ton),
+        })
+
+    df_salidas = pd.DataFrame(resultados_calculo).astype(float)
+    
+    # 4. Concatenar las entradas con las salidas para tener el DF completo y limpio
+    df_final = pd.concat([df_calculado.reset_index(drop=True), df_salidas.reset_index(drop=True)], axis=1)
+
+    return df_final
+
+def get_co2e_total_seguro(df_calculado):
+    """Calcula la suma total de CO2e Lote (Ton) de forma segura a partir del DF calculado."""
+    if df_calculado.empty or 'CO2e Lote (Ton)' not in df_calculado.columns:
+        return 0.0
+    # Asegura que la columna de suma sea numérica antes de sumar
+    co2e_col = pd.to_numeric(df_calculado['CO2e Lote (Ton)'], errors='coerce').fillna(0)
+    return co2e_col.sum()
+
 
 def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura, max_dap=100, max_altura=30):
     """Simula el crecimiento y calcula el CO2e en TONELADAS."""
@@ -128,50 +183,49 @@ def agregar_lote():
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero.")
         return
 
-    _, _, biomasa_uni_kg, co2e_uni_kg, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
+    # Usamos calcular_co2_arbol para obtener el Detalle Cálculo
+    _, _, _, _, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
     
-    biomasa_lote_ton = (biomasa_uni_kg * cantidad) / FACTOR_KG_A_TON
-    carbono_lote_ton = (biomasa_uni_kg * FACTOR_CARBONO * cantidad) / FACTOR_KG_A_TON
-    co2e_lote_ton = (co2e_uni_kg * cantidad) / FACTOR_KG_A_TON
-    
-    # Generar la nueva fila con tipos explícitos
+    # Generar la nueva fila SÓLO CON ENTRADAS (y Detalle Cálculo)
     nueva_fila = pd.DataFrame([{
         'Especie': especie, 
         'Cantidad': int(cantidad), 
         'DAP (cm)': float(dap), 
         'Altura (m)': float(altura), 
         'Densidad (ρ)': float(rho),
-        'Biomasa Lote (Ton)': float(biomasa_lote_ton), 
-        'Carbono Lote (Ton)': float(carbono_lote_ton), 
-        'CO2e Lote (Ton)': float(co2e_lote_ton),
         'Detalle Cálculo': detalle_calculo
     }]).astype(df_columns_types)
     
-    # Limpiar el DataFrame existente de cualquier degradación de tipo (aunque ya se hace al inicio, es una doble defensa)
+    # Limpiar el DataFrame existente de cualquier degradación de tipo
     df_actual = st.session_state.inventario_df.copy()
     for col in df_columns_numeric:
         df_actual[col] = pd.to_numeric(df_actual[col], errors='coerce').fillna(0)
     
-    # Concatena y actualiza el estado, asegurando los tipos finales
+    # Concatena y actualiza el estado (solo entradas)
     st.session_state.inventario_df = pd.concat([df_actual, nueva_fila], ignore_index=True).astype(df_columns_types)
-    
-    # No se actualiza 'total_co2e_ton' aquí porque se eliminó esa variable.
     
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
     st.session_state.altura_slider = 0.0
     st.session_state.especie_sel = list(DENSIDADES.keys())[0]
-    st.experimental_rerun()
+    
+    # Línea 174: Esta es la línea que falla al intentar refrescar la app, 
+    # pero el problema está en los datos de la sesión.
+    st.experimental_rerun() 
     
 def deshacer_ultimo_lote():
     if not st.session_state.inventario_df.empty:
         st.session_state.inventario_df = st.session_state.inventario_df.iloc[:-1]
-        # Eliminamos la actualización de st.session_state.total_co2e_ton
         st.experimental_rerun()
 
 def limpiar_inventario():
     st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
-    # Eliminamos la actualización de st.session_state.total_co2e_ton
+    st.experimental_rerun()
+
+def reiniciar_app_completo():
+    """Borra completamente todos los elementos del estado de sesión."""
+    for key in st.session_state.keys():
+        del st.session_state[key]
     st.experimental_rerun()
     
 def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton):
@@ -202,38 +256,44 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     processed_data = output.getvalue()
     return processed_data
 
-# --- FUNCIÓN DE CÁLCULO SEGURO DEL TOTAL (LA SOLUCIÓN CRÍTICA) ---
-def get_co2e_total_seguro(df):
-    """Calcula la suma total de CO2e Lote (Ton) de forma segura."""
-    # Aplicamos la conversión numérica justo antes de la suma.
-    co2e_col = pd.to_numeric(df['CO2e Lote (Ton)'], errors='coerce').fillna(0)
-    return co2e_col.sum()
 
-
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (SIMPLIFICADA) ---
-if 'inventario_df' not in st.session_state:
-    st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
-else:
-    # Mantenemos la conversión ultra-defensiva de tipos para el DataFrame en memoria
-    temp_df = pd.DataFrame(st.session_state.inventario_df).copy()
-    for col in df_columns_numeric:
-        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').fillna(0)
-    try:
-        st.session_state.inventario_df = temp_df.astype(df_columns_types, errors='ignore')
-    except:
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (REVISADA PARA ELIMINAR CUALQUIER DATO CORRUPTO) ---
+def inicializar_estado_de_sesion():
+    if 'inventario_df' not in st.session_state:
         st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
+    else:
+        # **ESTE ES EL BLOQUE CRÍTICO DE DEFENSA:**
+        temp_df = pd.DataFrame(st.session_state.inventario_df).copy()
+        
+        # Intentamos forzar los tipos de las columnas críticas
+        for col in df_columns_numeric:
+            temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').fillna(0)
+            
+        # Si el DataFrame no tiene las columnas requeridas (corrupción total), reiniciamos
+        missing_cols = set(df_columns_types.keys()) - set(temp_df.columns)
+        if missing_cols:
+            st.error(f"⚠️ **Error Grave de Datos:** El DataFrame de inventario está corrupto (faltan columnas: {', '.join(missing_cols)}). Reiniciando sesión...")
+            reiniciar_app_completo() # ¡Reinicia inmediatamente!
+            
+        # Aseguramos los tipos antes de guardarlo de nuevo
+        try:
+            st.session_state.inventario_df = temp_df.astype(df_columns_types, errors='ignore')
+        except:
+            # Si la conversión falla por cualquier razón, reiniciamos también.
+            st.error("⚠️ **Error Crítico de Tipo:** Reiniciando inventario debido a datos irrecuperables.")
+            reiniciar_app_completo()
+            
+    # Inicialización de otras variables
+    if 'especies_bd' not in st.session_state: 
+        st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
+    if 'proyecto' not in st.session_state: st.session_state.proyecto = ""
+    if 'hectareas' not in st.session_state: st.session_state.hectareas = 0.0
+    if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 0.0
+    if 'altura_slider' not in st.session_state: st.session_state.altura_slider = 0.0
+    if 'especie_sel' not in st.session_state: st.session_state.especie_sel = list(DENSIDADES.keys())[0]
+    if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
 
-# Eliminamos la variable st.session_state.total_co2e_ton para forzar el cálculo directo
-
-
-# Reiniciamos las demás variables (Se eliminan las 'memorias_proyectos')
-if 'especies_bd' not in st.session_state: st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
-if 'proyecto' not in st.session_state: st.session_state.proyecto = ""
-if 'hectareas' not in st.session_state: st.session_state.hectareas = 0.0
-if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 0.0
-if 'altura_slider' not in st.session_state: st.session_state.altura_slider = 0.0
-if 'especie_sel' not in st.session_state: st.session_state.especie_sel = list(DENSIDADES.keys())[0]
-if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
+inicializar_estado_de_sesion()
 
 
 # -------------------------------------------------
@@ -244,8 +304,9 @@ if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
 def render_calculadora_y_graficos():
     st.title("🌳 1. Cálculo de Captura de Carbono")
     
-    # --- CÁLCULO SEGURO DEL TOTAL A USAR ---
-    co2e_proyecto_ton = get_co2e_total_seguro(st.session_state.inventario_df)
+    # 1. CÁLCULO SEGURO DEL INVENTARIO COMPLETO Y TOTAL
+    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_df)
+    co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
 
     # --- INFORMACIÓN DEL PROYECTO ---
     st.subheader("📋 Información del Proyecto")
@@ -301,10 +362,8 @@ def render_calculadora_y_graficos():
                 # Botón de Descarga
                 col_excel, _ = st.columns([1, 4])
                 
-                df_inventario_descarga = st.session_state.inventario_df.copy()
-                
                 excel_data = generar_excel_memoria(
-                    df_inventario_descarga, 
+                    df_inventario_completo.copy(), # Usa el DF completo calculado
                     st.session_state.proyecto, 
                     st.session_state.hectareas, 
                     total_arboles_registrados, 
@@ -322,19 +381,20 @@ def render_calculadora_y_graficos():
                     
                 st.markdown("---")
                 st.caption("Detalle de los Lotes Añadidos (Unidades en Toneladas):")
-                st.dataframe(st.session_state.inventario_df.drop(columns=['Carbono Lote (Ton)', 'Detalle Cálculo']), use_container_width=True, hide_index=True)
+                # Mostrar el DF completo calculado
+                st.dataframe(df_inventario_completo.drop(columns=['Carbono Lote (Ton)', 'Detalle Cálculo']), use_container_width=True, hide_index=True)
                 
             else:
                 st.info("Añade el primer lote de árboles para iniciar el inventario.")
                 
     with tab2: # Visor de Gráficos
         st.markdown("## 1.2 Resultados Clave y Visualización")
-        if st.session_state.inventario_df.empty:
+        if df_inventario_completo.empty:
             st.warning("⚠️ No hay datos registrados.")
         else:
-            df_inventario = st.session_state.inventario_df.copy()
+            df_inventario = df_inventario_completo.copy()
             
-            # Cálculo seguro de KPIs
+            # Cálculo seguro de KPIs (ya tenemos co2e_proyecto_ton)
             total_arboles_registrados = df_inventario['Cantidad'].sum()
             biomasa_total_ton = df_inventario['Biomasa Lote (Ton)'].sum()
 
@@ -408,7 +468,7 @@ def render_calculadora_y_graficos():
                 st.dataframe(df_simulacion, use_container_width=True, hide_index=True)
 
 
-# --- 2. GESTIÓN DE MEMORIAS (SE ELIMINA ESTA SECCIÓN) ---
+# --- 2. GESTIÓN DE MEMORIAS (RETIRADA) ---
 def render_gestion_memorias():
     st.title("🚫 2. Gestión de Memorias de Proyectos (Funcionalidad Retirada)")
     st.warning("La funcionalidad de 'Gestión de Memorias' ha sido retirada temporalmente ya que causaba errores de tipo en la suma de inventario. Use el botón 'Descargar Reporte Excel' en la Sección 1 para guardar los datos.")
@@ -432,7 +492,8 @@ def render_gap_cpassa():
     st.title("📈 4. Análisis GAP de Mitigación Corporativa (CPSSA)")
     
     # CÁLCULO SEGURO DEL TOTAL
-    co2e_proyecto_ton = get_co2e_total_seguro(st.session_state.inventario_df)
+    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_df)
+    co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
     
     if co2e_proyecto_ton <= 0:
         st.warning("⚠️ El inventario del proyecto debe tener CO2e registrado (sección 1) para realizar este análisis.")
@@ -512,12 +573,16 @@ def render_gestion_especie():
 # -------------------------------------------------
 def main_app():
     
-    # 1. CÁLCULO SEGURO DEL TOTAL PARA LA BARRA LATERAL
-    co2e_total_sidebar = get_co2e_total_seguro(st.session_state.inventario_df)
+    # 1. CÁLCULO SEGURO DEL INVENTARIO COMPLETO Y TOTAL
+    df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_df)
+    co2e_total_sidebar = get_co2e_total_seguro(df_inventario_completo)
     
     # 2. Definir la navegación en la barra lateral
     st.sidebar.title("Menú de Navegación")
     
+    # **AÑADIR BOTÓN DE REINICIO FORZADO**
+    st.sidebar.button("🚨 Reiniciar App (Limpieza Total)", on_click=reiniciar_app_completo, help="¡Usar solo si hay errores persistentes! Borra todo el estado de la sesión.", type="primary")
+
     menu_options = [
         "1. Cálculo de Captura", 
         "3. Mapa", 
@@ -529,7 +594,7 @@ def main_app():
     
     st.sidebar.markdown("---")
     st.sidebar.caption("Proyecto: " + (st.session_state.proyecto if st.session_state.proyecto else "Sin nombre"))
-    st.sidebar.metric("CO2e Inventario Total", f"{co2e_total_sidebar:,.2f} Ton") # Uso de la variable calculada segura
+    st.sidebar.metric("CO2e Inventario Total", f"{co2e_total_sidebar:,.2f} Ton") 
     
     # 3. Renderizar la sección seleccionada
     if selection == "1. Cálculo de Captura":
