@@ -204,24 +204,27 @@ def agregar_lote():
     st.session_state.altura_slider = 0.0
     st.session_state.especie_sel = list(DENSIDADES.keys())[0]
     
-    # Línea 232: Ahora, este rerun debería ser exitoso con datos estables.
-    st.experimental_rerun() 
+    # ¡FIX! Usar st.rerun()
+    st.rerun() 
     
 def deshacer_ultimo_lote():
     if st.session_state.inventario_list:
         st.session_state.inventario_list.pop() # Eliminar el último diccionario de la lista
-        st.experimental_rerun()
+        # ¡FIX! Usar st.rerun()
+        st.rerun()
 
 def limpiar_inventario():
     st.session_state.inventario_list = [] # Resetear a lista vacía
-    st.experimental_rerun()
+    # ¡FIX! Usar st.rerun()
+    st.rerun()
 
 def reiniciar_app_completo():
     """Borra completamente todos los elementos del estado de sesión."""
     keys_to_delete = list(st.session_state.keys())
     for key in keys_to_delete:
         del st.session_state[key]
-    st.experimental_rerun()
+    # ¡FIX! Usar st.rerun()
+    st.rerun()
 
     
 def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton):
@@ -272,8 +275,9 @@ def inicializar_estado_de_sesion():
     # Defensa contra versiones antiguas: si existe el DF corrupto, lo borramos.
     if 'inventario_df' in st.session_state:
         del st.session_state.inventario_df
-        st.warning("⚠️ Se detectó y eliminó una variable de sesión antigua (inventario_df).")
-        st.experimental_rerun()
+        st.warning("⚠️ Se detectó y eliminó una variable de sesión antigua (inventario_df). Se forzará un reinicio.")
+        # ¡FIX! Usar st.rerun()
+        st.rerun()
         
 inicializar_estado_de_sesion()
 
@@ -547,7 +551,8 @@ def render_gestion_especie():
         st.session_state.especies_bd = new_data.sort_values(by=['Especie', 'Año'])
 
         st.success(f"Datos de crecimiento y agua para '{especie_a_gestionar}' actualizados y guardados.")
-        st.experimental_rerun()
+        # ¡FIX! Usar st.rerun()
+        st.rerun()
 
     st.markdown("---")
     st.caption("Estructura de la Base de Datos Completa:")
