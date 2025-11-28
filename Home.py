@@ -28,31 +28,25 @@ DENSIDADES = {
     'Densidad Manual (g/cm³)': 0.0
 }
 
-# --- FACTORES DE CRECIMIENTO ANUAL PROMEDIO (Para la simulación) ---
-# Estos factores son simplificados para la simulación. Se aplican como porcentaje anual.
+# --- FACTORES DE CRECIMIENTO ANUAL PROMEDIO ---
 FACTORES_CRECIMIENTO = {
-    'Eucalipto (E. globulus)': {'DAP': 0.15, 'Altura': 0.12}, # Rápido
-    'Pino (P. patula)': {'DAP': 0.10, 'Altura': 0.08}, # Moderado
-    'Caoba (S. macrophylla)': {'DAP': 0.05, 'Altura': 0.05}, # Lento
-    'Hibiscus tiliaceus (Majao)': {'DAP': 0.08, 'Altura': 0.07}, # Moderado
-    'Algarrobo': {'DAP': 0.06, 'Altura': 0.05}, # Moderado/Lento
-    'Factor Manual': {'DAP': 0.05, 'Altura': 0.05} # Por defecto
+    'Eucalipto (E. globulus)': {'DAP': 0.15, 'Altura': 0.12},
+    'Pino (P. patula)': {'DAP': 0.10, 'Altura': 0.08},
+    'Caoba (S. macrophylla)': {'DAP': 0.05, 'Altura': 0.05},
+    'Hibiscus tiliaceus (Majao)': {'DAP': 0.08, 'Altura': 0.07},
+    'Algarrobo': {'DAP': 0.06, 'Altura': 0.05},
+    'Factor Manual': {'DAP': 0.05, 'Altura': 0.05}
 }
 
 # --- FUNCIONES DE CÁLCULO INDIVIDUAL ---
 def calcular_co2_arbol(rho, dap_cm, altura_m):
-    """
-    Calcula CO2e individual y devuelve el detalle de los cálculos.
-    """
     detalle = ""
     if rho <= 0 or dap_cm <= 0 or altura_m <= 0:
         detalle = "ERROR: Valores de entrada (DAP, Altura o Densidad) deben ser mayores a cero."
         return 0, 0, 0, 0, detalle
         
-    # 1. Biomasa Aérea Bruta (AGB)
     agb_kg = 0.112 * ((rho * (dap_cm**2) * altura_m)**0.916)
     
-    # Detalle para la pestaña técnica
     base = rho * (dap_cm**2) * altura_m
     potencia = base**0.916
     detalle += f"## 1. Biomasa Aérea (AGB) por Árbol\n"
@@ -60,27 +54,37 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     detalle += f"**Sustitución:** `0.112 * ({rho} * {dap_cm}² * {altura_m})^{0.916}`\n"
     detalle += f"**Resultado AGB (kg):** `{agb_kg:.4f}`\n\n"
     
-    # 2. Biomasa Subterránea (BGB)
     bgb_kg = agb_kg * FACTOR_BGB_SECO 
     biomasa_total = agb_kg + bgb_kg
-    
-    # 3. Carbono Total
     carbono_total = biomasa_total * FACTOR_CARBONO
-    
-    # 4. CO2 Equivalente (CO2e)
     co2e_total = carbono_total * FACTOR_CO2E
     
     return agb_kg, bgb_kg, biomasa_total, co2e_total, detalle
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN ---
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CORREGIDA) ---
+# Asegura que todas las claves existan antes de ser llamadas
 if 'inventario_df' not in st.session_state:
     st.session_state.inventario_df = pd.DataFrame(columns=[
         'Especie', 'Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)',
         'Biomasa Lote (kg)', 'Carbono Lote (kg)', 'CO2e Lote (kg)', 'Detalle Cálculo'
     ])
-# [Resto de inicializaciones omitidas para brevedad...]
+if 'proyecto' not in st.session_state:
+    st.session_state.proyecto = ""
+if 'hectareas' not in st.session_state:
+    st.session_state.hectareas = 0.0
+if 'total_co2e_kg' not in st.session_state:
+    st.session_state.total_co2e_kg = 0.0
+if 'dap_slider' not in st.session_state:
+    st.session_state.dap_slider = 0.0
+if 'altura_slider' not in st.session_state:
+    st.session_state.altura_slider = 0.0
+if 'especie_sel' not in st.session_state:
+    st.session_state.especie_sel = list(DENSIDADES.keys())[0]
+if 'cantidad_input' not in st.session_state:
+    st.session_state.cantidad_input = 0
 
-# --- FUNCIONES DE MANEJO DE INVENTARIO (omitidas para brevedad, no hay cambios funcionales) ---
+
+# --- FUNCIONES DE MANEJO DE INVENTARIO (omitidas para brevedad) ---
 def agregar_lote():
     # ... (CÓDIGO DE agregar_lote) ...
     especie = st.session_state.especie_sel
@@ -98,7 +102,6 @@ def agregar_lote():
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero.")
         return
 
-    # Cálculo MODIFICADO para obtener el detalle
     agb_uni, bgb_uni, biomasa_uni, co2e_uni, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
     
     biomasa_lote = biomasa_uni * cantidad
@@ -133,27 +136,22 @@ def limpiar_inventario():
     st.experimental_rerun()
 # -------------------------------------------------
 
-# --- FUNCIÓN DE SIMULACIÓN DE CRECIMIENTO (NUEVA) ---
+# --- FUNCIÓN DE SIMULACIÓN DE CRECIMIENTO ---
 def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura, max_dap=100, max_altura=30):
     
     resultados = []
-    
-    # Asegurarse de que el DataFrame no esté vacío
     if df_inicial.empty:
         return pd.DataFrame()
 
-    # Obtener la densidad, que no cambia con el crecimiento
     rho = df_inicial['Densidad (ρ)'].iloc[0]
     cantidad_arboles = df_inicial['Cantidad'].iloc[0]
 
-    # Tomar el DAP y Altura inicial
     dap_actual = df_inicial['DAP (cm)'].iloc[0]
     altura_actual = df_inicial['Altura (m)'].iloc[0]
 
-    # Simular año por año
     for anio in range(1, anios_simulacion + 1):
         
-        # 1. Aplicar crecimiento (modelando la detención al alcanzar el límite)
+        # Aplicar crecimiento (modelando la detención al alcanzar el límite)
         if dap_actual < max_dap:
             dap_actual *= (1 + factor_dap)
         else:
@@ -165,17 +163,19 @@ def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura,
             altura_actual = max_altura
             
         
-        # 2. Recalcular CO2e con las nuevas dimensiones
+        # Recalcular CO2e con las nuevas dimensiones
         _, _, _, co2e_uni, _ = calcular_co2_arbol(rho, dap_actual, altura_actual)
         co2e_lote_anual = co2e_uni * cantidad_arboles
         
-        # 3. Guardar el resultado
+        # Calcular CO2e Acumulado
+        co2e_acumulado_kg = co2e_lote_anual if anio == 1 else (resultados[-1]['CO2e Acumulado (Ton)'] * 1000) + co2e_lote_anual 
+        
         resultados.append({
             'Año': anio,
             'DAP (cm)': dap_actual,
             'Altura (m)': altura_actual,
             'CO2e Lote (kg)': co2e_lote_anual,
-            'CO2e Acumulado (Ton)': sum(r['CO2e Lote (kg)'] for r in resultados) / 1000 if anio > 1 else co2e_lote_anual / 1000
+            'CO2e Acumulado (Ton)': co2e_acumulado_kg / 1000
         })
 
     return pd.DataFrame(resultados)
@@ -193,6 +193,7 @@ def main_app():
     col_proj, col_hectareas = st.columns([2, 1])
 
     with col_proj:
+        # st.session_state.proyecto ya está inicializado en la parte superior
         nombre_proyecto = st.text_input("Nombre del Proyecto (Opcional)", value=st.session_state.proyecto, placeholder="Ej: Reforestación Bosque Seco 2024", key='proyecto_input')
         st.session_state.proyecto = nombre_proyecto
 
@@ -205,7 +206,6 @@ def main_app():
     st.divider()
 
     # --- NAVEGACIÓN POR PESTAÑAS (TABS) ---
-    # ¡MODIFICADO: Añadida la cuarta pestaña!
     tab1, tab2, tab3, tab4 = st.tabs(["➕ Cálculo de CO2 (Datos)", "📈 Visor de Gráficos", "🔬 Detalle Técnico", "🚀 Potencial de Crecimiento"])
 
     # =================================================
@@ -213,7 +213,7 @@ def main_app():
     # =================================================
     with tab1:
         st.markdown("## 1. Registro y Acumulación de Inventario")
-        # [CÓDIGO DE LA PESTAÑA 1 OMITIDO PARA BREVEDAD, ES EL MISMO QUE ANTES]
+
         col_input, col_totales = st.columns([1, 2])
 
         with col_input:
@@ -231,10 +231,10 @@ def main_app():
                 
                 st.markdown("---")
                 
-                st.number_input("Cantidad de Árboles (n)", min_value=0, step=1, key='cantidad_input')
+                st.number_input("Cantidad de Árboles (n)", min_value=0, step=1, key='cantidad_input', value=st.session_state.cantidad_input)
                 
-                st.slider("DAP promedio (cm)", min_value=0.0, max_value=150.0, step=1.0, key='dap_slider', help="Diámetro a la Altura del Pecho. 🌳")
-                st.slider("Altura promedio (m)", min_value=0.0, max_value=50.0, step=0.1, key='altura_slider', help="Altura total del árbol. 🌲")
+                st.slider("DAP promedio (cm)", min_value=0.0, max_value=150.0, step=1.0, key='dap_slider', help="Diámetro a la Altura del Pecho. 🌳", value=st.session_state.dap_slider)
+                st.slider("Altura promedio (m)", min_value=0.0, max_value=50.0, step=0.1, key='altura_slider', help="Altura total del árbol. 🌲", value=st.session_state.altura_slider)
                 
                 st.form_submit_button("➕ Añadir Lote al Inventario", on_click=agregar_lote)
 
@@ -246,7 +246,7 @@ def main_app():
             if total_arboles_registrados > 0:
                 
                 col_deshacer, col_limpiar = st.columns(2)
-                col_deshacer.button("↩️ Deshacer Último Lote", on_click=deshacer_ultimo_lote, help="Elimina la última fila añadida a la tabla.")
+                col_deshacer.button(↩️ Deshacer Último Lote", on_click=deshacer_ultimo_lote, help="Elimina la última fila añadida a la tabla.")
                 col_limpiar.button("🗑️ Limpiar Inventario Total", on_click=limpiar_inventario, help="Elimina todas las entradas y reinicia el cálculo.")
 
                 st.markdown("---")
@@ -260,10 +260,9 @@ def main_app():
                 st.info("Añade el primer lote de árboles para iniciar el inventario.")
 
     # =================================================
-    # PESTAÑA 2: VISOR DE GRÁFICOS Y ANÁLISIS (SIN CAMBIOS)
+    # PESTAÑA 2: VISOR DE GRÁFICOS Y ANÁLISIS 
     # =================================================
     with tab2:
-        # [CÓDIGO DE LA PESTAÑA 2 OMITIDO PARA BREVEDAD, ES EL MISMO QUE ANTES]
         st.markdown("## 2. Resultados Clave y Visualización")
 
         if st.session_state.inventario_df.empty:
@@ -308,6 +307,7 @@ def main_app():
                 st.plotly_chart(fig_co2e, use_container_width=True)
             
             with col_graf2:
+                # CORRECCIÓN: Se cambió 'RdPfGn' por 'Plasma'
                 fig_arboles = px.pie(df_graficos, values='Conteo_Arboles', names='Especie', 
                                      title='Conteo de Árboles por Especie',
                                      hole=0.3,
@@ -325,19 +325,18 @@ def main_app():
             c2.success(f"🏠 Compensación de **{hogares_anio:.1f} hogares** sin consumo eléctrico por un año.")
 
     # =================================================
-    # PESTAÑA 3: DETALLE TÉCNICO (SIN CAMBIOS)
+    # PESTAÑA 3: DETALLE TÉCNICO
     # =================================================
     with tab3:
-        # [CÓDIGO DE LA PESTAÑA 3 OMITIDO PARA BREVEDAD, ES EL MISMO QUE ANTES]
         st.markdown("## 🔬 Detalle Técnico de los Cálculos (Paso a Paso)")
-        st.warning("Esta sección muestra el desglose del cálculo para **un solo árbol** dentro de cada lote. Los valores totales en las otras pestañas están multiplicados por la cantidad de árboles del lote.")
+        st.warning("Esta sección muestra el desglose del cálculo para **un solo árbol** dentro de cada lote.")
 
         if st.session_state.inventario_df.empty:
             st.info("Aún no hay lotes de árboles registrados para mostrar el detalle técnico.")
         else:
             
             lotes_info = [
-                f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles)" 
+                f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP: {row['DAP (cm)']:.1f} cm" 
                 for i, row in st.session_state.inventario_df.iterrows()
             ]
             
@@ -355,7 +354,7 @@ def main_app():
             st.code(detalle_lote, language='markdown')
 
     # =================================================
-    # PESTAÑA 4: POTENCIAL DE CRECIMIENTO (NUEVA PESTAÑA)
+    # PESTAÑA 4: POTENCIAL DE CRECIMIENTO
     # =================================================
     with tab4:
         st.markdown("## 🚀 Simulación de Potencial de Captura a Largo Plazo")
@@ -366,7 +365,6 @@ def main_app():
         else:
             df_inventario = st.session_state.inventario_df
             
-            # 1. Selector de Lote
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
                 for i, row in df_inventario.iterrows()
@@ -381,7 +379,6 @@ def main_app():
 
             st.markdown("---")
             
-            # 2. Parámetros de Simulación
             col_anios, col_factores = st.columns([1, 2])
             
             with col_anios:
@@ -389,10 +386,8 @@ def main_app():
                 
             with col_factores:
                 
-                # Asignar factores iniciales basados en la especie seleccionada
                 factor_inicial = FACTORES_CRECIMIENTO.get(especie_sim, FACTORES_CRECIMIENTO['Factor Manual'])
                 
-                # Inputs para modificar los factores
                 st.markdown(f"### Factores de Crecimiento Anual (Especie: **{especie_sim}**)")
                 
                 factor_dap_input = st.number_input("Tasa de Crecimiento Anual DAP (%)", 
@@ -405,11 +400,9 @@ def main_app():
                                                       value=factor_inicial['Altura'], step=0.01,
                                                       format="%.2f", key='factor_alt_sim')
                 
-                # Límites Máximos
                 max_dap_input = st.number_input("DAP Máximo de Madurez (cm)", min_value=10.0, max_value=300.0, value=100.0, step=10.0)
                 max_altura_input = st.number_input("Altura Máxima de Madurez (m)", min_value=5.0, max_value=100.0, value=30.0, step=5.0)
 
-            # 3. Ejecutar Simulación
             df_simulacion = simular_crecimiento(
                 lote_seleccionado, 
                 anios_simulacion, 
@@ -422,13 +415,11 @@ def main_app():
             st.markdown("---")
             st.subheader(f"Resultados de la Simulación a {anios_simulacion} Años")
 
-            # 4. Visualización de Resultados
             if not df_simulacion.empty:
                 
                 co2e_final = df_simulacion['CO2e Acumulado (Ton)'].iloc[-1]
                 st.metric("Potencial de Captura Total (Toneladas CO2e)", f"**{co2e_final:.2f} Ton**")
                 
-                # Gráfico de Proyección
                 fig_proj = px.line(df_simulacion, x='Año', y='CO2e Acumulado (Ton)', 
                                     title='Captura Acumulada de CO2e vs. Tiempo',
                                     labels={'CO2e Acumulado (Ton)': 'CO2e Acumulado (Ton)', 'Año': 'Año'},
