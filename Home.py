@@ -48,6 +48,15 @@ EMISIONES_SEDES = {
     'DISAC Tarapoto': 708.38
 }
 
+# --- DEFINICIÓN DE TIPOS DE COLUMNAS ---
+df_columns_types = {
+    'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
+    'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
+    'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
+}
+df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
+
+
 # --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO ---
 
 def calcular_co2_arbol(rho, dap_cm, altura_m):
@@ -72,6 +81,7 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
 
 def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura, max_dap=100, max_altura=30):
     """Simula el crecimiento y calcula el CO2e en TONELADAS."""
+    # ... (código simular_crecimiento sin cambios)
     resultados = []
     if df_inicial.empty: return pd.DataFrame()
 
@@ -129,7 +139,7 @@ def agregar_lote():
     carbono_lote_ton = (biomasa_uni_kg * FACTOR_CARBONO * cantidad) / FACTOR_KG_A_TON
     co2e_lote_ton = (co2e_uni_kg * cantidad) / FACTOR_KG_A_TON
     
-    # Se genera la nueva fila asegurando la conversión explícita a los tipos correctos
+    # Generar la nueva fila asegurando la conversión explícita a los tipos correctos (USANDO df_columns_types)
     nueva_fila = pd.DataFrame([{
         'Especie': especie, 
         'Cantidad': int(cantidad), 
@@ -140,19 +150,18 @@ def agregar_lote():
         'Carbono Lote (Ton)': float(carbono_lote_ton), 
         'CO2e Lote (Ton)': float(co2e_lote_ton),
         'Detalle Cálculo': detalle_calculo
-    }])
+    }]).astype(df_columns_types)
     
-    # Definición de tipos para asegurar consistencia
-    df_columns_types = {
-        'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
-        'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
-        'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
-    }
+    # CORRECCIÓN ADICIONAL: Limpiar el DataFrame existente antes de concatenar por si tenía errores de tipo.
+    # Esto es redundante pero ultra-defensivo.
+    df_actual = st.session_state.inventario_df.copy()
+    for col in df_columns_numeric:
+        df_actual[col] = pd.to_numeric(df_actual[col], errors='coerce').fillna(0)
     
     # Concatena la nueva fila con la tabla existente
-    st.session_state.inventario_df = pd.concat([st.session_state.inventario_df.astype(df_columns_types), nueva_fila.astype(df_columns_types)], ignore_index=True)
+    st.session_state.inventario_df = pd.concat([df_actual, nueva_fila], ignore_index=True)
     
-    # CORRECCIÓN: Forzar a numérico antes de agregar la suma 
+    # Forzar a numérico antes de agregar la suma 
     co2e_col = pd.to_numeric(st.session_state.inventario_df['CO2e Lote (Ton)'], errors='coerce').fillna(0)
     st.session_state.total_co2e_ton = co2e_col.sum()
     
@@ -163,6 +172,7 @@ def agregar_lote():
     st.experimental_rerun()
     
 def deshacer_ultimo_lote():
+    # ... (código deshacer_ultimo_lote sin cambios)
     if not st.session_state.inventario_df.empty:
         st.session_state.inventario_df = st.session_state.inventario_df.iloc[:-1]
         
@@ -173,17 +183,13 @@ def deshacer_ultimo_lote():
         st.experimental_rerun()
 
 def limpiar_inventario():
-    # Inicialización del DataFrame con tipos corregidos (en Ton)
-    df_columns = {
-        'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
-        'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
-        'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
-    }
-    st.session_state.inventario_df = pd.DataFrame(columns=df_columns.keys()).astype(df_columns)
+    # ... (código limpiar_inventario sin cambios)
+    st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
     st.session_state.total_co2e_ton = 0.0
     st.experimental_rerun()
     
 def guardar_memoria():
+    # ... (código guardar_memoria sin cambios)
     if st.session_state.inventario_df.empty or not st.session_state.proyecto:
         st.error("Debe ingresar el nombre del proyecto y al menos un lote para guardar la memoria.")
         return
@@ -207,7 +213,7 @@ def guardar_memoria():
     st.success(f"Memoria de proyecto '{nombre_memoria}' guardada exitosamente.")
     
 def generar_excel_memoria(memoria_data):
-    # Asegurarse de que el DataFrame se cree con tipos correctos antes de exportar
+    # ... (código generar_excel_memoria sin cambios)
     df_inventario = pd.DataFrame(memoria_data['inventario_data'])
     
     output = io.BytesIO()
@@ -235,23 +241,30 @@ def generar_excel_memoria(memoria_data):
     return processed_data
 
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CON CORRECCIÓN DE TIPOS) ---
-df_columns_types = {
-    'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
-    'Densidad (ρ)': float, 'Biomasa Lote (Ton)': float, 'Carbono Lote (Ton)': float, 
-    'CO2e Lote (Ton)': float, 'Detalle Cálculo': str
-}
-df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
-
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CON CORRECCIÓN DE TIPOS MEJORADA) ---
 if 'inventario_df' not in st.session_state:
     st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
 else:
-    # CORRECCIÓN CRÍTICA: Forzar tipos numéricos al cargar la sesión
-    for col in df_columns_numeric:
-        # Usamos errors='coerce' para convertir cualquier valor no numérico (como una cadena vacía) a NaN, luego fillna(0)
-        st.session_state.inventario_df[col] = pd.to_numeric(st.session_state.inventario_df[col], errors='coerce').fillna(0)
-    st.session_state.inventario_df = st.session_state.inventario_df.astype(df_columns_types, errors='ignore') # Reaplicar tipos por si acaso
+    # CORRECCIÓN CRÍTICA Y DEFENSA: Forzar tipos numéricos al cargar la sesión
     
+    # 1. Limpiar filas completamente vacías o no deseadas que pueden generar tipos 'object'
+    # Intentar cargar el DataFrame desde el estado de sesión de forma segura
+    temp_df = pd.DataFrame(st.session_state.inventario_df).copy()
+    
+    # 2. Forzar conversión a numérico y manejar errores (errors='coerce')
+    for col in df_columns_numeric:
+        # Convertir a numérico y reemplazar valores no convertibles (strings, etc.) con NaN, y luego con 0
+        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').fillna(0)
+        
+    # 3. Aplicar los tipos correctos para el resto de columnas y la estructura
+    try:
+        st.session_state.inventario_df = temp_df.astype(df_columns_types, errors='ignore')
+    except Exception as e:
+        # En caso de error, volvemos al dataframe vacío seguro
+        st.error(f"Error crítico al reestablecer el inventario: {e}. Se reiniciará el inventario.")
+        st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
+
+
 # Variable total en TONELADAS
 if 'total_co2e_ton' not in st.session_state: st.session_state.total_co2e_ton = 0.0
 # Recalcular el total_co2e_ton de manera defensiva al inicio
