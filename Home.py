@@ -80,8 +80,7 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
 # --- FUNCIÓN DE RECÁLCULO SEGURO (CRÍTICA) ---
 def recalcular_inventario_completo(df_base):
     """
-    Toma el DataFrame de entradas (st.session_state.inventario_df) y calcula 
-    todas las salidas de CO2e, Biomasa y Carbono, garantizando tipos float.
+    Toma el DataFrame de entradas y calcula todas las salidas de CO2e, Biomasa y Carbono.
     """
     columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
     
@@ -209,8 +208,7 @@ def agregar_lote():
     st.session_state.altura_slider = 0.0
     st.session_state.especie_sel = list(DENSIDADES.keys())[0]
     
-    # Línea 174: Esta es la línea que falla al intentar refrescar la app, 
-    # pero el problema está en los datos de la sesión.
+    # Línea 186
     st.experimental_rerun() 
     
 def deshacer_ultimo_lote():
@@ -224,9 +222,13 @@ def limpiar_inventario():
 
 def reiniciar_app_completo():
     """Borra completamente todos los elementos del estado de sesión."""
-    for key in st.session_state.keys():
+    # Usamos una copia de las claves para poder iterar y borrar sin problemas de concurrencia
+    keys_to_delete = list(st.session_state.keys())
+    for key in keys_to_delete:
         del st.session_state[key]
+    # Línea 232
     st.experimental_rerun()
+
     
 def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton):
     # Función de descarga modificada para usar los datos actuales del inventario
@@ -257,44 +259,47 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     return processed_data
 
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (REVISADA PARA ELIMINAR CUALQUIER DATO CORRUPTO) ---
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (MODIFICADA PARA MÁXIMA ROBUSTEZ) ---
 def inicializar_estado_de_sesion():
+    # 1. Inicializar todas las variables si es la primera ejecución
     if 'inventario_df' not in st.session_state:
         st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
-    else:
-        # **ESTE ES EL BLOQUE CRÍTICO DE DEFENSA:**
-        temp_df = pd.DataFrame(st.session_state.inventario_df).copy()
-        
-        # Intentamos forzar los tipos de las columnas críticas
-        for col in df_columns_numeric:
-            temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').fillna(0)
-            
-        # Si el DataFrame no tiene las columnas requeridas (corrupción total), reiniciamos
-        missing_cols = set(df_columns_types.keys()) - set(temp_df.columns)
-        if missing_cols:
-            st.error(f"⚠️ **Error Grave de Datos:** El DataFrame de inventario está corrupto (faltan columnas: {', '.join(missing_cols)}). Reiniciando sesión...")
-            reiniciar_app_completo() # ¡Reinicia inmediatamente!
-            
-        # Aseguramos los tipos antes de guardarlo de nuevo
-        try:
-            st.session_state.inventario_df = temp_df.astype(df_columns_types, errors='ignore')
-        except:
-            # Si la conversión falla por cualquier razón, reiniciamos también.
-            st.error("⚠️ **Error Crítico de Tipo:** Reiniciando inventario debido a datos irrecuperables.")
-            reiniciar_app_completo()
-            
-    # Inicialización de otras variables
-    if 'especies_bd' not in st.session_state: 
         st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
-    if 'proyecto' not in st.session_state: st.session_state.proyecto = ""
-    if 'hectareas' not in st.session_state: st.session_state.hectareas = 0.0
-    if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 0.0
-    if 'altura_slider' not in st.session_state: st.session_state.altura_slider = 0.0
-    if 'especie_sel' not in st.session_state: st.session_state.especie_sel = list(DENSIDADES.keys())[0]
-    if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
+        st.session_state.proyecto = ""
+        st.session_state.hectareas = 0.0
+        st.session_state.dap_slider = 0.0
+        st.session_state.altura_slider = 0.0
+        st.session_state.especie_sel = list(DENSIDADES.keys())[0]
+        st.session_state.cantidad_input = 0
+        return
+        
+    # 2. Si ya existen, aplicar defensa al DataFrame
+    temp_df = pd.DataFrame(st.session_state.inventario_df).copy()
+    
+    # 2.1. Intentamos forzar los tipos de las columnas críticas
+    corruption_detected = False
+    for col in df_columns_numeric:
+        original_dtype = temp_df[col].dtype
+        temp_df[col] = pd.to_numeric(temp_df[col], errors='coerce').fillna(0)
+        # Comprobar si hubo conversión forzada (indica corrupción)
+        if temp_df[col].isnull().any() or (temp_df[col].dtype != original_dtype and temp_df[col].dtype != np.dtype('float64')):
+             corruption_detected = True
+
+    # 2.2. Si faltan columnas o se detectó corrupción, reiniciamos el DF
+    missing_cols = set(df_columns_types.keys()) - set(temp_df.columns)
+    if missing_cols or corruption_detected:
+        if not temp_df.empty: 
+            st.warning(f"⚠️ **Advertencia de Corrupción de Datos:** Inventario reiniciado por problemas de tipos de datos o columnas faltantes. (Corrupción detectada: {corruption_detected})")
+        
+        # Reestablecer solo el DF corrupto a un estado limpio.
+        st.session_state.inventario_df = pd.DataFrame(columns=df_columns_types.keys()).astype(df_columns_types)
+        st.experimental_rerun() # Forzamos el re-render con el DF limpio
+
+    else:
+        # 2.3. Si todo está bien, guardamos el DF con tipos asegurados
+        st.session_state.inventario_df = temp_df.astype(df_columns_types, errors='ignore')
 
 inicializar_estado_de_sesion()
-
 
 # -------------------------------------------------
 # --- SECCIONES DE LA APLICACIÓN (EN FUNCIÓN) ---
