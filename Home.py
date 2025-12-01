@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go 
-import folium
-from streamlit_folium import folium_static
 import io
 import json
 
@@ -19,7 +17,7 @@ AGB_FACTOR_A = 0.112
 AGB_FACTOR_B = 0.916
 FACTOR_KG_A_TON = 1000 # Constante para conversión
 
-# NUEVAS CONSTANTES PARA COSTOS 
+# CONSTANTES PARA COSTOS 
 PRECIO_AGUA_POR_M3 = 3.0 # Precio fijo del m3 de agua en Perú (3 Soles)
 FACTOR_L_A_M3 = 1000 # 1 m3 = 1000 Litros
 
@@ -30,7 +28,6 @@ DENSIDADES_BASE = {
     'Molle (Schinus molle)': {'Densidad': 0.44, 'Agua_L_Anio': 900, 'Precio_Plantón': 6.00},
     'Algarrobo (Prosopis pallida)': {'Densidad': 0.53, 'Agua_L_Anio': 800, 'Precio_Plantón': 4.00},
 }
-
 
 # FACTORES DE CRECIMIENTO INICIAL 
 FACTORES_CRECIMIENTO = {
@@ -74,16 +71,15 @@ HUELLA_CORPORATIVA = {
     "DISAC Tarapoto": 0.708
 }
 
-# --- DEFINICIÓN DE TIPOS DE COLUMNAS (Incluye Lat/Lon solo para el DF interno, no para la exportación/visualización) ---
+# --- DEFINICIÓN DE TIPOS DE COLUMNAS ---
 df_columns_types = {
     'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
     'Densidad (ρ)': float, 'Años Plantados': int, 'Consumo Agua Unitario (L/año)': float, 
     'Precio Plantón Unitario (S/)': float, 
     'Detalle Cálculo': str,
-    'Latitud': float, 
-    'Longitud': float 
+    # 'Latitud' y 'Longitud' ELIMINADOS
 }
-df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Años Plantados', 'Consumo Agua Unitario (L/año)', 'Precio Plantón Unitario (S/)', 'Latitud', 'Longitud'] 
+df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Años Plantados', 'Consumo Agua Unitario (L/año)', 'Precio Plantón Unitario (S/)'] 
 
 columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)', 'Consumo Agua Total Lote (L)', 'Costo Total Lote (S/)'] 
 
@@ -111,7 +107,6 @@ def get_current_species_info():
         # Asegurar la conversión segura de los nuevos campos
         densidad_val = pd.to_numeric(row.get('Densidad (g/cm³)', 0.0), errors='coerce') 
         agua_val = pd.to_numeric(row.get('Consumo Agua (L/año)', 0.0), errors='coerce')
-        # El precio del plantón se mantiene en la BD de especies, pero el usuario lo sobrescribe en el form de lote.
         precio_val = pd.to_numeric(row.get('Precio Plantón (S/)', 0.0), errors='coerce') 
         
         if pd.notna(densidad_val) and densidad_val > 0:
@@ -250,7 +245,7 @@ def recalcular_inventario_completo(inventario_list):
         cantidad = row['Cantidad']
         consumo_agua_uni = row['Consumo Agua Unitario (L/año)'] 
         precio_planton_uni = row['Precio Plantón Unitario (S/)'] 
-        años_plantados = row['Años Plantados'] # Obtener los años plantados
+        años_plantados = row['Años Plantados'] 
 
         # 1. Cálculo de CO2e (Biomasa, Carbono, CO2e por árbol en kg)
         _, _, biomasa_uni_kg, co2e_uni_kg, detalle = calcular_co2_arbol(rho, dap, altura)
@@ -264,7 +259,7 @@ def recalcular_inventario_completo(inventario_list):
         costo_planton_lote = cantidad * precio_planton_uni
         consumo_agua_lote_l = cantidad * consumo_agua_uni
         
-        # --- CORRECCIÓN DE CÁLCULO ACUMULADO DEL AGUA ---
+        # --- CÁLCULO ACUMULADO DEL AGUA (CORREGIDO) ---
         
         # Calcular el costo de agua por UN AÑO (operación anual)
         volumen_agua_lote_m3_anual = consumo_agua_lote_l / FACTOR_L_A_M3
@@ -276,7 +271,7 @@ def recalcular_inventario_completo(inventario_list):
         # Costo total = Costo Plantones (Inversión Inicial) + Costo Agua (Operación Acumulada)
         costo_total_lote = costo_planton_lote + costo_agua_acumulado_lote
         
-        # --- FIN DE CORRECCIÓN ---
+        # --- FIN DE CÁLCULO ---
         
         resultados_calculo.append({
             'Biomasa Lote (Ton)': biomasa_lote_ton,
@@ -308,19 +303,18 @@ def inicializar_estado_de_sesion():
     if 'especies_bd' not in st.session_state:
         df_cols = ['Especie', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)', 'Densidad (g/cm³)', 'Precio Plantón (S/)'] 
         data_rows = [
-            (name, 5.0, 5.0, data['Agua_L_Anio'], data['Densidad'], data['Precio_Plantón']) # DAP y Altura iniciales como float
+            (name, 5.0, 5.0, data['Agua_L_Anio'], data['Densidad'], data['Precio_Plantón']) 
             for name, data in DENSIDADES_BASE.items()
         ]
         df_bd_inicial = pd.DataFrame(data_rows, columns=df_cols)
         st.session_state.especies_bd = df_bd_inicial
-    if 'lotes_mapa' not in st.session_state:
-        st.session_state.lotes_mapa = []
+    # 'lotes_mapa' ELIMINADO
     if 'proyecto' not in st.session_state:
         st.session_state.proyecto = "Proyecto Reforestación CPSSA"
     if 'hectareas' not in st.session_state:
         st.session_state.hectareas = 0.0
         
-    # Inicialización de inputs del formulario (Asegurar que DAP y Altura sean enteros aquí)
+    # Inicialización de inputs del formulario
     if 'especie_seleccionada' not in st.session_state: st.session_state.especie_seleccionada = list(DENSIDADES_BASE.keys())[0]
     if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 100
     if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 5
@@ -329,8 +323,7 @@ def inicializar_estado_de_sesion():
     if 'densidad_manual_input' not in st.session_state: st.session_state.densidad_manual_input = 0.5
     if 'consumo_agua_manual_input' not in st.session_state: st.session_state.consumo_agua_manual_input = 1000.0
     if 'precio_planton_input' not in st.session_state: st.session_state.precio_planton_input = 5.0 
-    if 'latitud_input' not in st.session_state: st.session_state.latitud_input = -8.0
-    if 'longitud_input' not in st.session_state: st.session_state.longitud_input = -77.0
+    # 'latitud_input' y 'longitud_input' ELIMINADOS
 
 
 def reiniciar_app_completo():
@@ -346,7 +339,6 @@ def agregar_lote():
     
     especie = st.session_state.especie_seleccionada
     cantidad = st.session_state.cantidad_input
-    # Usamos los valores de los sliders, que ahora son enteros, pero los forzamos a float para el cálculo
     dap = float(st.session_state.dap_slider) 
     altura = float(st.session_state.altura_slider)
     años = st.session_state.anios_plantados_input
@@ -363,9 +355,7 @@ def agregar_lote():
         rho = info['Densidad']
         consumo_agua_unitario = info['Agua_L_Anio']
 
-    # Las coordenadas del lote ahora vienen de la sección de Información del Proyecto
-    latitud_lote = st.session_state.latitud_input
-    longitud_lote = st.session_state.longitud_input
+    # Latitud/Longitud ELIMINADOS de aquí y del estado de sesión.
 
     if cantidad <= 0 or dap <= 0 or altura <= 0 or rho <= 0 or años < 0 or consumo_agua_unitario < 0 or precio_planton_unitario < 0:
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero, y los valores de Años, Agua y Precio sean mayores o iguales a cero.")
@@ -376,22 +366,19 @@ def agregar_lote():
     nuevo_lote = {
         'Especie': especie,
         'Cantidad': int(cantidad),
-        'DAP (cm)': float(dap), # Lo almacenamos como float para mantener la coherencia con el modelo de datos
-        'Altura (m)': float(altura), # Lo almacenamos como float para mantener la coherencia con el modelo de datos
+        'DAP (cm)': float(dap), 
+        'Altura (m)': float(altura), 
         'Densidad (ρ)': float(rho),
         'Años Plantados': int(años),
         'Consumo Agua Unitario (L/año)': float(consumo_agua_unitario),
         'Precio Plantón Unitario (S/)': float(precio_planton_unitario), 
         'Detalle Cálculo': detalle_calculo,
-        'Latitud': latitud_lote, # Usa la latitud del proyecto
-        'Longitud': longitud_lote, # Usa la longitud del proyecto
+        # 'Latitud' y 'Longitud' ELIMINADOS
     }
     
     st.session_state.inventario_list.append(nuevo_lote)
     
-    tooltip_mapa = f"{especie} ({int(cantidad)} árboles, {dap}cm DAP)"
-    # Usa las coordenadas del proyecto para el punto del mapa
-    st.session_state.lotes_mapa.append({'lat': latitud_lote, 'lon': longitud_lote, 'tooltip': tooltip_mapa})
+    # st.session_state.lotes_mapa ELIMINADO
     
     st.success(f"Lote de {cantidad} árboles de {especie} añadido.")
 
@@ -400,8 +387,7 @@ def deshacer_ultimo_lote():
     """Elimina el último lote añadido."""
     if st.session_state.inventario_list:
         st.session_state.inventario_list.pop()
-        if st.session_state.lotes_mapa:
-            st.session_state.lotes_mapa.pop()
+        # st.session_state.lotes_mapa ELIMINADO
         st.success("Último lote eliminado.")
     else:
         st.warning("El inventario está vacío.")
@@ -409,7 +395,7 @@ def deshacer_ultimo_lote():
 def limpiar_inventario():
     """Limpia todo el inventario."""
     st.session_state.inventario_list = []
-    st.session_state.lotes_mapa = []
+    # st.session_state.lotes_mapa ELIMINADO
     st.success("Inventario completamente limpiado.")
 
 
@@ -418,8 +404,8 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    # 1. Definir columnas a excluir (Lat/Lon y Detalle Cálculo)
-    cols_to_drop = ['Latitud', 'Longitud', 'Detalle Cálculo']
+    # 1. Definir columnas a excluir (Solo 'Detalle Cálculo' ya que Lat/Lon fueron eliminados del DF)
+    cols_to_drop = ['Detalle Cálculo']
     df_inventario_download = df_inventario.drop(columns=cols_to_drop, errors='ignore')
 
     df_inventario_download.to_excel(writer, sheet_name='Inventario Detallado', index=False)
@@ -454,7 +440,7 @@ def render_calculadora_y_graficos():
     costo_proyecto_total = get_costo_total_seguro(df_inventario_completo)
     agua_proyecto_total = get_agua_total_seguro(df_inventario_completo)
 
-    # --- INFORMACIÓN DEL PROYECTO (SECCIÓN CORREGIDA CON LAT/LON) ---
+    # --- INFORMACIÓN DEL PROYECTO (Lat/Lon ELIMINADOS) ---
     st.subheader("📋 Información del Proyecto")
     col_proj, col_hectareas = st.columns([2, 1])
     with col_proj:
@@ -462,11 +448,7 @@ def render_calculadora_y_graficos():
     with col_hectareas:
         st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas', help="Dejar en 0 si no se aplica o no se conoce el dato.")
     
-    # 🗺️ CAMPOS DE COORDENADAS (MOVIDOS AQUÍ)
-    st.markdown("##### 🗺️ Coordenadas del Proyecto (Usadas para el Mapa)")
-    col_lat, col_lon = st.columns(2)
-    col_lat.number_input("Latitud", format="%.5f", key='latitud_input', value=st.session_state.latitud_input, step=0.01)
-    col_lon.number_input("Longitud", format="%.5f", key='longitud_input', value=st.session_state.longitud_input, step=0.01)
+    # Coordenadas ELIMINADAS
 
     st.divider()
 
@@ -481,7 +463,7 @@ def render_calculadora_y_graficos():
             st.markdown("### Datos del Nuevo Lote")
             with st.form("form_lote", clear_on_submit=True):
                 
-                # 1. Especie, Cantidad y Precio Plantón (Ahora variable)
+                # 1. Especie, Cantidad y Precio Plantón
                 col_esp, col_cant, col_precio_pl = st.columns(3)
                 especie_keys = list(current_species_info.keys())
                 especie_sel = col_esp.selectbox(
@@ -496,7 +478,6 @@ def render_calculadora_y_graficos():
                 # Obtener el precio por defecto para precargar el input
                 precio_default = current_species_info.get(especie_sel, {}).get('Precio_Plantón', 0.0)
                 
-                # Si la especie cambia (y no es la primera ejecución), se precarga el precio
                 if especie_sel != st.session_state.get('last_especie_sel') or st.session_state.get('first_run_form_lote', True):
                     st.session_state.precio_planton_input = precio_default
                     st.session_state.last_especie_sel = especie_sel
@@ -512,26 +493,24 @@ def render_calculadora_y_graficos():
                     help="Costo de inversión por plantón. Puede editarlo."
                 )
 
-                # 2. Datos Físicos (DAP y Altura) - CORREGIDO: sin decimales
+                # 2. Datos Físicos (DAP y Altura)
                 col_dap, col_altura = st.columns(2)
                 
-                # DAP: Se fuerza a entero con step=1 y el valor inicial
                 col_dap.slider(
                     "DAP promedio (cm)", 
                     min_value=0, max_value=50, 
-                    step=1, # CORRECCIÓN: Ahora es entero
+                    step=1, 
                     key='dap_slider', 
                     help="Diámetro a la altura del pecho. 🌳", 
-                    value=int(st.session_state.dap_slider) # Se asegura que el valor sea entero
+                    value=int(st.session_state.dap_slider) 
                 )
-                # Altura: Se fuerza a entero con step=1 y el valor inicial
                 col_altura.slider(
                     "Altura promedio (m)", 
                     min_value=0, max_value=50, 
-                    step=1, # CORRECCIÓN: Ahora es entero
+                    step=1, 
                     key='altura_slider', 
                     help="Altura total del árbol. 🌲", 
-                    value=int(st.session_state.altura_slider) # Se asegura que el valor sea entero
+                    value=int(st.session_state.altura_slider) 
                 )
                 
                 # 3. Años Plantados
@@ -547,8 +526,6 @@ def render_calculadora_y_graficos():
                 else:
                     st.info(f"Usando valores por defecto para {especie_sel}: Densidad: **{current_species_info[especie_sel]['Densidad']} g/cm³** | Agua: **{current_species_info[especie_sel]['Agua_L_Anio']} L/año**.")
                     
-                # 5. Coordenadas (ELIMINADAS DEL FORMULARIO) - Ahora se toman de la Información del Proyecto.
-
                 st.form_submit_button("➕ Añadir Lote al Inventario", on_click=agregar_lote)
 
         with col_totales:
@@ -557,7 +534,6 @@ def render_calculadora_y_graficos():
             
             st.metric("🌳 Total Árboles Registrados", f"{total_arboles_registrados:,.0f} Árboles")
             st.metric("🌱 Captura CO₂e (Anual)", f"{co2e_proyecto_ton:,.2f} Toneladas")
-            # El costo total ahora incluye el costo acumulado del agua
             st.metric("💰 Costo Total (Acumulado)", f"S/{costo_proyecto_total:,.2f}") 
             st.metric("💧 Consumo Agua Total (Anual)", f"{agua_proyecto_total:,.0f} Litros")
             
@@ -581,7 +557,7 @@ def render_calculadora_y_graficos():
                     data=excel_data,
                     file_name=f'Reporte_CO2e_CPSSA_{pd.Timestamp.today().strftime("%Y%m%d")}.xlsx',
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Genera un archivo Excel con el resumen y el detalle de cada lote. **Excluye Latitud/Longitud.**"
+                    help="Genera un archivo Excel con el resumen y el detalle de cada lote."
                 )
 
         st.markdown("---")
@@ -590,8 +566,8 @@ def render_calculadora_y_graficos():
         if df_inventario_completo.empty:
             st.info("No hay lotes registrados. Use el formulario superior para empezar.")
         else:
-            # EXCLUYE Latitud y Longitud de la visualización en pantalla
-            cols_to_drop = [col for col in ['Detalle Cálculo', 'Latitud', 'Longitud'] if col in df_inventario_completo.columns]
+            # Se excluye solo la columna 'Detalle Cálculo' de la visualización
+            cols_to_drop = [col for col in ['Detalle Cálculo'] if col in df_inventario_completo.columns]
             df_mostrar = df_inventario_completo.drop(columns=cols_to_drop)
             
             st.dataframe(
@@ -651,16 +627,14 @@ def render_calculadora_y_graficos():
         if df_inventario_completo.empty:
             st.warning("No hay datos en el inventario para mostrar el detalle técnico.")
         else:
-            # CORRECCIÓN: Se usa el inventario_list para asegurar la correspondencia con los índices del selectbox
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles)" 
-                for i, row in enumerate(st.session_state.inventario_list) # Se itera sobre la lista original
+                for i, row in enumerate(st.session_state.inventario_list) 
             ]
             
             lote_seleccionado = st.selectbox("Seleccione el Lote para el Detalle:", lotes_info)
             lote_index = lotes_info.index(lote_seleccionado)
             
-            # Se usa el DataFrame completo, que contiene la columna 'Detalle Cálculo'
             fila_lote = df_inventario_completo.iloc[lote_index]
             detalle_markdown = fila_lote['Detalle Cálculo']
             
@@ -673,21 +647,18 @@ def render_calculadora_y_graficos():
         if df_inventario_completo.empty:
             st.warning("No hay datos en el inventario para simular el crecimiento.")
         else:
-            # CORRECCIÓN: Se usa el inventario_list para asegurar la correspondencia con los índices del selectbox
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles)" 
-                for i, row in enumerate(st.session_state.inventario_list) # Se itera sobre la lista original
+                for i, row in enumerate(st.session_state.inventario_list)
             ]
 
             lote_sim_index_str = st.selectbox("Seleccione el Lote para la Proyección:", lotes_info)
             index_df = lotes_info.index(lote_sim_index_str)
             
-            # Se usa el DataFrame completo para obtener los datos de la fila
             lote_df = df_inventario_completo.iloc[[index_df]]
             
             especie_actual = lote_df['Especie'].iloc[0]
             
-            # Uso de .get con un valor por defecto si no existe la clave
             factores_base = FACTORES_CRECIMIENTO.get(especie_actual, FACTORES_CRECIMIENTO['Factor Manual'])
             
             st.subheader("Parámetros de Proyección de Crecimiento")
@@ -701,7 +672,6 @@ def render_calculadora_y_graficos():
             def simular_crecimiento(lote_df, anios, factor_dap, factor_altura, max_dap=100.0, max_alt=50.0):
                 if lote_df.empty: return pd.DataFrame()
                 
-                # Obtener valores iniciales (aseguramos que sean float para el cálculo)
                 cant = lote_df['Cantidad'].iloc[0]
                 rho = lote_df['Densidad (ρ)'].iloc[0]
                 dap_i = lote_df['DAP (cm)'].iloc[0]
@@ -709,11 +679,9 @@ def render_calculadora_y_graficos():
                 
                 data = []
                 for anio in range(1, anios + 1):
-                    # Aplicar factor de crecimiento, limitado por el máximo de madurez
                     dap_n = min(dap_i * (1 + factor_dap)**anio, max_dap)
                     alt_n = min(alt_i * (1 + factor_altura)**anio, max_alt)
                     
-                    # Recalcular CO2e con los nuevos valores
                     _, _, _, co2e_uni_kg, _ = calcular_co2_arbol(rho, dap_n, alt_n)
                     co2e_lote_ton = (co2e_uni_kg * cant) / FACTOR_KG_A_TON
                     
@@ -744,29 +712,7 @@ def render_calculadora_y_graficos():
                 st.warning("Simulación no ejecutada o lote sin datos.")
 
 
-def render_mapa():
-    """Muestra la ubicación de los lotes en un mapa interactivo."""
-    st.title("3. Mapa de Ubicación de Lotes")
-    
-    if not st.session_state.lotes_mapa:
-        st.info("Aún no se han añadido lotes con coordenadas. Use la sección '1. Cálculo de Captura' para añadir lotes y verlos aquí.")
-        return
-
-    df_lotes = pd.DataFrame(st.session_state.lotes_mapa)
-    lat_centro = df_lotes['lat'].mean()
-    lon_centro = df_lotes['lon'].mean()
-
-    m = folium.Map(location=[lat_centro, lon_centro], zoom_start=6)
-
-    for index, row in df_lotes.iterrows():
-        folium.Marker(
-            [row['lat'], row['lon']], 
-            tooltip=row['tooltip'],
-            icon=folium.Icon(color="green", icon="tree", prefix="fa")
-        ).add_to(m)
-
-    st.markdown("### Ubicaciones Geográficas de Lotes Plantados")
-    folium_static(m)
+# Función render_mapa ELIMINADA
 
 
 def render_gap_cpassa():
@@ -881,9 +827,9 @@ def main_app():
         st.markdown("---")
         st.subheader("Menú de Navegación")
         
+        # '3. Mapa' ELIMINADO de las opciones
         options = [
             "1. Cálculo de Captura", 
-            "3. Mapa",
             "4. GAP CPSSA",
             "5. Gestión de Especie"
         ]
@@ -914,14 +860,14 @@ def main_app():
     
     if selection == "1. Cálculo de Captura":
         render_calculadora_y_graficos()
-    elif selection == "3. Mapa":
-        render_mapa()
+    # elif selection == "3. Mapa": ELIMINADO
+    #     render_mapa()
     elif selection == "4. GAP CPSSA":
         render_gap_cpassa()
     elif selection == "5. Gestión de Especie":
         render_gestion_especie()
     
-    # Pie de página actualizado (solicitud del usuario)
+    # Pie de página
     st.caption("---")
     st.caption(
         "**Solicitar cambios y/o actualizaciones al Área de Cambio Climático**"
