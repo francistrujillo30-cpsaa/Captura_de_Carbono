@@ -229,6 +229,7 @@ def reiniciar_app_completo():
     st.rerun()
 
     
+# --- FUNCIÓN DE DESCARGA DE EXCEL (CORREGIDA PARA KEYERROR EN DF VACÍO) ---
 def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton):
     # Función de descarga modificada para usar los datos actuales del inventario
     fecha = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -237,7 +238,18 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
     # 1. Hoja de Inventario Detallado (ya en Toneladas)
-    df_inventario.drop(columns=['Detalle Cálculo']).to_excel(writer, sheet_name='Inventario Detallado (Ton)', index=False)
+    
+    # CRÍTICO: Manejar KeyError si el DataFrame está vacío y la columna no existe
+    df_para_excel = df_inventario.copy()
+    try:
+        # Solo intentar eliminar la columna si existe en el DataFrame
+        if 'Detalle Cálculo' in df_para_excel.columns:
+            df_para_excel = df_para_excel.drop(columns=['Detalle Cálculo'])
+    except:
+        # Si falla el drop por alguna razón, usamos el DF tal cual (que estará vacío)
+        pass 
+        
+    df_para_excel.to_excel(writer, sheet_name='Inventario Detallado (Ton)', index=False)
     
     # 2. Hoja de Resumen
     df_resumen = pd.DataFrame({
@@ -442,7 +454,7 @@ def render_calculadora_y_graficos():
             # FIX APLICADO: Usar enumerate() para obtener índice (i) y valor (row)
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
-                for i, row in enumerate(st.session_state.inventario_list) # <-- CORREGIDO
+                for i, row in enumerate(st.session_state.inventario_list) 
             ]
             lote_sim_index = st.selectbox("Seleccione el Lote para la Proyección de Crecimiento:", options=range(len(lotes_info)), format_func=lambda x: lotes_info[x], key='sim_lote_select')
             
