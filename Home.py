@@ -18,20 +18,19 @@ AGB_FACTOR_A = 0.112
 AGB_FACTOR_B = 0.916
 FACTOR_KG_A_TON = 1000 # Constante para conversión
 
-# BASE DE DATOS INICIAL DE DENSIDADES (Valores por defecto para selección rápida)
+# BASE DE DATOS INICIAL DE DENSIDADES (Valores DEFINITIVOS solicitados)
 # Valores de densidad (ρ) en g/cm³ basados en revisión bibliográfica
 DENSIDADES_BASE = {
-    'Eucalipto (Eucalyptus globulus)': 0.76, 
-    'Torrellana': 0.55,
-    'Majoe (Hibiscus tiliaceus)': 0.65,
-    'Molle (Schinus molle)': 0.50,
-    'Algarrobo (Prosopis pallida)': 0.80,
+    'Eucalipto Torrellana (Corymbia torelliana)': 0.46, 
+    'Majoe (Hibiscus tiliaceus)': 0.57,
+    'Molle (Schinus molle)': 0.44,
+    'Algarrobo (Prosopis pallida)': 0.53,
 }
 
-# FACTORES DE CRECIMIENTO INICIAL (Valores por defecto para simulación)
+
+# FACTORES DE CRECIMIENTO INICIAL (Valores por defecto para simulación - Sincronizado con DENSIDADES_BASE)
 FACTORES_CRECIMIENTO = {
-    'Eucalipto (Eucalyptus globulus)': {'DAP': 0.15, 'Altura': 0.12, 'Agua': 0.0},
-    'Torrellana': {'DAP': 0.05, 'Altura': 0.05, 'Agua': 0.0},
+    'Eucalipto Torrellana (Corymbia torelliana)': {'DAP': 0.05, 'Altura': 0.05, 'Agua': 0.0},
     'Majoe (Hibiscus tiliaceus)': {'DAP': 0.08, 'Altura': 0.06, 'Agua': 0.0},
     'Molle (Schinus molle)': {'DAP': 0.06, 'Altura': 0.07, 'Agua': 0.0},
     'Algarrobo (Prosopis pallida)': {'DAP': 0.04, 'Altura': 0.04, 'Agua': 0.0},
@@ -545,7 +544,7 @@ def render_calculadora_y_graficos():
             # Usar el inventario_list directamente para obtener información
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
-                for i, row in st.session_state.inventario_list # CORREGIDO: Usar st.session_state.inventario_list (una lista de diccionarios)
+                for i, row in enumerate(st.session_state.inventario_list)
             ]
             lote_sim_index = st.selectbox("Seleccione el Lote para la Proyección de Crecimiento:", options=range(len(lotes_info)), format_func=lambda x: lotes_info[x], key='sim_lote_select')
             
