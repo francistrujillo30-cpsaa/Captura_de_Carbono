@@ -211,7 +211,7 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
 def recalcular_inventario_completo(inventario_list):
     """
     Toma la lista de entradas (List[Dict]) y genera un DataFrame completo y limpio, 
-    incluyendo CO2e, Consumo de Agua y Costo Total (Plantones + Agua).
+    incluyendo CO2e, Consumo de Agua y Costo Total (Plantones + Agua Acumulada).
     """
     if not inventario_list:
         # Crear un DF vacío con todas las columnas esperadas
@@ -250,7 +250,8 @@ def recalcular_inventario_completo(inventario_list):
         cantidad = row['Cantidad']
         consumo_agua_uni = row['Consumo Agua Unitario (L/año)'] 
         precio_planton_uni = row['Precio Plantón Unitario (S/)'] 
-        
+        años_plantados = row['Años Plantados'] # Obtener los años plantados
+
         # 1. Cálculo de CO2e (Biomasa, Carbono, CO2e por árbol en kg)
         _, _, biomasa_uni_kg, co2e_uni_kg, detalle = calcular_co2_arbol(rho, dap, altura)
         
@@ -262,7 +263,20 @@ def recalcular_inventario_completo(inventario_list):
         # 3. Costo y Agua
         costo_planton_lote = cantidad * precio_planton_uni
         consumo_agua_lote_l = cantidad * consumo_agua_uni
-        costo_total_lote = costo_planton_lote # Costo total del lote solo incluye plantones por ahora
+        
+        # --- CORRECCIÓN DE CÁLCULO ACUMULADO DEL AGUA ---
+        
+        # Calcular el costo de agua por UN AÑO (operación anual)
+        volumen_agua_lote_m3_anual = consumo_agua_lote_l / FACTOR_L_A_M3
+        costo_agua_anual_lote = volumen_agua_lote_m3_anual * PRECIO_AGUA_POR_M3
+        
+        # Costo de agua acumulado: Costo Anual * Años Plantados
+        costo_agua_acumulado_lote = costo_agua_anual_lote * años_plantados
+        
+        # Costo total = Costo Plantones (Inversión Inicial) + Costo Agua (Operación Acumulada)
+        costo_total_lote = costo_planton_lote + costo_agua_acumulado_lote
+        
+        # --- FIN DE CORRECCIÓN ---
         
         resultados_calculo.append({
             'Biomasa Lote (Ton)': biomasa_lote_ton,
@@ -349,6 +363,10 @@ def agregar_lote():
         rho = info['Densidad']
         consumo_agua_unitario = info['Agua_L_Anio']
 
+    # Las coordenadas del lote ahora vienen de la sección de Información del Proyecto
+    latitud_lote = st.session_state.latitud_input
+    longitud_lote = st.session_state.longitud_input
+
     if cantidad <= 0 or dap <= 0 or altura <= 0 or rho <= 0 or años < 0 or consumo_agua_unitario < 0 or precio_planton_unitario < 0:
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero, y los valores de Años, Agua y Precio sean mayores o iguales a cero.")
         return
@@ -365,14 +383,15 @@ def agregar_lote():
         'Consumo Agua Unitario (L/año)': float(consumo_agua_unitario),
         'Precio Plantón Unitario (S/)': float(precio_planton_unitario), 
         'Detalle Cálculo': detalle_calculo,
-        'Latitud': st.session_state.latitud_input,
-        'Longitud': st.session_state.longitud_input,
+        'Latitud': latitud_lote, # Usa la latitud del proyecto
+        'Longitud': longitud_lote, # Usa la longitud del proyecto
     }
     
     st.session_state.inventario_list.append(nuevo_lote)
     
     tooltip_mapa = f"{especie} ({int(cantidad)} árboles, {dap}cm DAP)"
-    st.session_state.lotes_mapa.append({'lat': st.session_state.latitud_input, 'lon': st.session_state.longitud_input, 'tooltip': tooltip_mapa})
+    # Usa las coordenadas del proyecto para el punto del mapa
+    st.session_state.lotes_mapa.append({'lat': latitud_lote, 'lon': longitud_lote, 'tooltip': tooltip_mapa})
     
     st.success(f"Lote de {cantidad} árboles de {especie} añadido.")
 
@@ -435,7 +454,7 @@ def render_calculadora_y_graficos():
     costo_proyecto_total = get_costo_total_seguro(df_inventario_completo)
     agua_proyecto_total = get_agua_total_seguro(df_inventario_completo)
 
-    # --- INFORMACIÓN DEL PROYECTO ---
+    # --- INFORMACIÓN DEL PROYECTO (SECCIÓN CORREGIDA CON LAT/LON) ---
     st.subheader("📋 Información del Proyecto")
     col_proj, col_hectareas = st.columns([2, 1])
     with col_proj:
@@ -443,6 +462,12 @@ def render_calculadora_y_graficos():
     with col_hectareas:
         st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas', help="Dejar en 0 si no se aplica o no se conoce el dato.")
     
+    # 🗺️ CAMPOS DE COORDENADAS (MOVIDOS AQUÍ)
+    st.markdown("##### 🗺️ Coordenadas del Proyecto (Usadas para el Mapa)")
+    col_lat, col_lon = st.columns(2)
+    col_lat.number_input("Latitud", format="%.5f", key='latitud_input', value=st.session_state.latitud_input, step=0.01)
+    col_lon.number_input("Longitud", format="%.5f", key='longitud_input', value=st.session_state.longitud_input, step=0.01)
+
     st.divider()
 
     # --- NAVEGACIÓN POR PESTAÑAS ---
@@ -522,12 +547,7 @@ def render_calculadora_y_graficos():
                 else:
                     st.info(f"Usando valores por defecto para {especie_sel}: Densidad: **{current_species_info[especie_sel]['Densidad']} g/cm³** | Agua: **{current_species_info[especie_sel]['Agua_L_Anio']} L/año**.")
                     
-                # 5. Coordenadas (Para el Mapa)
-                st.markdown("---")
-                st.markdown("##### 🗺️ Coordenadas (Usadas solo para el Mapa)")
-                col_lat, col_lon = st.columns(2)
-                col_lat.number_input("Latitud", format="%.5f", key='latitud_input', value=st.session_state.latitud_input, step=0.01)
-                col_lon.number_input("Longitud", format="%.5f", key='longitud_input', value=st.session_state.longitud_input, step=0.01)
+                # 5. Coordenadas (ELIMINADAS DEL FORMULARIO) - Ahora se toman de la Información del Proyecto.
 
                 st.form_submit_button("➕ Añadir Lote al Inventario", on_click=agregar_lote)
 
@@ -537,7 +557,8 @@ def render_calculadora_y_graficos():
             
             st.metric("🌳 Total Árboles Registrados", f"{total_arboles_registrados:,.0f} Árboles")
             st.metric("🌱 Captura CO₂e (Anual)", f"{co2e_proyecto_ton:,.2f} Toneladas")
-            st.metric("💰 Costo Total (Plantones)", f"S/{costo_proyecto_total:,.2f}")
+            # El costo total ahora incluye el costo acumulado del agua
+            st.metric("💰 Costo Total (Acumulado)", f"S/{costo_proyecto_total:,.2f}") 
             st.metric("💧 Consumo Agua Total (Anual)", f"{agua_proyecto_total:,.0f} Litros")
             
             if total_arboles_registrados > 0:
@@ -605,7 +626,7 @@ def render_calculadora_y_graficos():
             col_costo, col_agua = st.columns(2)
             
             with col_costo:
-                fig_costo = px.bar(df_graficos, x='Especie', y='Total_Costo_S', title='Costo Total (Plantones) por Especie (Soles)', color='Total_Costo_S', color_continuous_scale=px.colors.sequential.Sunset)
+                fig_costo = px.bar(df_graficos, x='Especie', y='Total_Costo_S', title='Costo Total (Acumulado) por Especie (Soles)', color='Total_Costo_S', color_continuous_scale=px.colors.sequential.Sunset)
                 col_costo.plotly_chart(fig_costo, use_container_width=True)
             
             with col_agua:
