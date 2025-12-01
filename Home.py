@@ -199,6 +199,7 @@ def agregar_lote():
     # CRÍTICO: Añadir a la lista en el estado de sesión (native Python list)
     st.session_state.inventario_list.append(nueva_fila_dict)
     
+    # Restablecer los valores de entrada a cero después de agregar (opcional, pero buena práctica)
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
     st.session_state.altura_slider = 0.0
@@ -239,7 +240,6 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     
     # 1. Hoja de Inventario Detallado (ya en Toneladas)
     
-    # CRÍTICO: Manejar KeyError si el DataFrame está vacío y la columna no existe
     df_para_excel = df_inventario.copy()
     try:
         # Solo intentar eliminar la columna si existe en el DataFrame
@@ -320,13 +320,14 @@ def render_calculadora_y_graficos():
     col_proj, col_hectareas = st.columns([2, 1])
 
     with col_proj:
-        # Usamos el key='proyecto' para que Streamlit sepa que es el mismo widget
-        nombre_proyecto = st.text_input("Nombre del Proyecto (Opcional)", value=st.session_state.proyecto, placeholder="Ej: Reforestación Bosque Seco 2024", key='proyecto') 
-        st.session_state.proyecto = nombre_proyecto
+        # Usamos el key='proyecto'. El valor se actualiza automáticamente en st.session_state.proyecto
+        st.text_input("Nombre del Proyecto (Opcional)", value=st.session_state.proyecto, placeholder="Ej: Reforestación Bosque Seco 2024", key='proyecto') 
+        # LÍNEA REMOVIDA: st.session_state.proyecto = nombre_proyecto
 
     with col_hectareas:
-        hectareas = st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas', help="Dejar en 0 si no se aplica o no se conoce el dato.")
-        st.session_state.hectareas = hectareas
+        # Usamos el key='hectareas'. El valor se actualiza automáticamente en st.session_state.hectareas
+        st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas', help="Dejar en 0 si no se aplica o no se conoce el dato.")
+        # LÍNEA REMOVIDA: st.session_state.hectareas = hectareas
             
     st.divider()
 
@@ -378,8 +379,8 @@ def render_calculadora_y_graficos():
                 
                 excel_data = generar_excel_memoria(
                     df_inventario_completo.copy(), # Usa el DF completo calculado
-                    st.session_state.proyecto, 
-                    st.session_state.hectareas, 
+                    st.session_state.proyecto, # Acceso directo
+                    st.session_state.hectareas, # Acceso directo
                     total_arboles_registrados, 
                     co2e_proyecto_ton # Usa el valor calculado de forma segura
                 )
@@ -612,6 +613,7 @@ def main_app():
     selection = st.sidebar.selectbox("Seleccione la Sección", menu_options)
     
     st.sidebar.markdown("---")
+    # Los valores se acceden directamente del session_state, ya que se actualizan automáticamente
     st.sidebar.caption("Proyecto: " + (st.session_state.proyecto if st.session_state.proyecto else "Sin nombre"))
     st.sidebar.metric("CO2e Inventario Total", f"{co2e_total_sidebar:,.2f} Ton") 
     
