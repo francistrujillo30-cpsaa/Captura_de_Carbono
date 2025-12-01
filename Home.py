@@ -18,21 +18,27 @@ AGB_FACTOR_A = 0.112
 AGB_FACTOR_B = 0.916
 FACTOR_KG_A_TON = 1000 # Constante para conversión
 
-# BASE DE DATOS INICIAL DE DENSIDADES (Valores por defecto)
+# BASE DE DATOS INICIAL DE DENSIDADES (Valores por defecto para selección rápida)
+# Valores de densidad (ρ) en g/cm³
 DENSIDADES = {
-    'Eucalipto (E. globulus)': 0.76, 'Cedro (C. odorata)': 0.48, 'Caoba (S. macrophylla)': 0.54,
-    'Pino (P. patula)': 0.43, 'Ficus (F. benghalensis)': 0.50, 'Palmera (varias)': 0.35,
-    'Roble Andino': 0.65, 'Meijo': 0.60, 'Algarrobo': 0.80, 'Torrellana': 0.55,
-    'Palmera hawaii': 0.35, 'Hibiscus tiliaceus (Majao)': 0.65, 'Densidad Manual (g/cm³)': 0.0
+    'Eucalipto (Eucalyptus globulus)': 0.76, 
+    'Torrellana': 0.55,
+    'Majoe (Hibiscus tiliaceus)': 0.65,
+    'Molle (Schinus molle)': 0.50,
+    'Algarrobo (Prosopis pallida)': 0.80,
+    'Densidad Manual (g/cm³)': 0.0
 }
 
-# FACTORES DE CRECIMIENTO INICIAL (Valores por defecto)
+# FACTORES DE CRECIMIENTO INICIAL (Valores por defecto para simulación)
 FACTORES_CRECIMIENTO = {
-    'Eucalipto (E. globulus)': {'DAP': 0.15, 'Altura': 0.12, 'Agua': 0.0},
-    'Pino (P. patula)': {'DAP': 0.10, 'Altura': 0.08, 'Agua': 0.0},
-    'Caoba (S. macrophylla)': {'DAP': 0.05, 'Altura': 0.05, 'Agua': 0.0},
+    'Eucalipto (Eucalyptus globulus)': {'DAP': 0.15, 'Altura': 0.12, 'Agua': 0.0},
+    'Torrellana': {'DAP': 0.05, 'Altura': 0.05, 'Agua': 0.0},
+    'Majoe (Hibiscus tiliaceus)': {'DAP': 0.08, 'Altura': 0.06, 'Agua': 0.0},
+    'Molle (Schinus molle)': {'DAP': 0.06, 'Altura': 0.07, 'Agua': 0.0},
+    'Algarrobo (Prosopis pallida)': {'DAP': 0.04, 'Altura': 0.04, 'Agua': 0.0},
     'Factor Manual': {'DAP': 0.05, 'Altura': 0.05, 'Agua': 0.0}
 }
+
 
 # HUELLA DE CARBONO CORPORATIVA POR SEDE (EN MILES DE tCO2e) - CORRECCIÓN APLICADA
 # Fuente: Informe Final Huella de Carbono Corporativa 2024
@@ -77,7 +83,7 @@ df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)']
 columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
 
 
-# --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO (SIN CAMBIOS) ---
+# --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO (SIN CAMBIOS EN LÓGICA) ---
 
 def calcular_co2_arbol(rho, dap_cm, altura_m):
     """Calcula la biomasa, carbono y CO2e por árbol en KILOGRAMOS."""
@@ -186,9 +192,10 @@ def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura,
     return df_simulacion
 
 
-# --- FUNCIONES DE MANEJO DE ESTADO (SIN CAMBIOS) ---
+# --- FUNCIONES DE MANEJO DE ESTADO ---
 
 def agregar_lote():
+    # Uso de st.session_state para obtener valores de los widgets de entrada
     especie = st.session_state.especie_sel
     cantidad = st.session_state.cantidad_input
     dap = st.session_state.dap_slider
@@ -198,7 +205,10 @@ def agregar_lote():
     if especie == 'Densidad Manual (g/cm³)' and 'densidad_manual_input' in st.session_state and st.session_state.densidad_manual_input > 0:
         rho = st.session_state.densidad_manual_input
     elif especie != 'Densidad Manual (g/cm³)':
-        rho = DENSIDADES[especie]
+        rho = DENSIDADES.get(especie, 0.0) # Uso de .get para mayor seguridad
+        if rho == 0.0:
+            st.error(f"Error: La especie '{especie}' no tiene una densidad definida en el inventario inicial.")
+            return
 
     if cantidad <= 0 or dap <= 0 or altura <= 0 or rho <= 0:
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero.")
@@ -217,6 +227,7 @@ def agregar_lote():
     
     st.session_state.inventario_list.append(nueva_fila_dict)
     
+    # Resetear inputs para la siguiente entrada
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
     st.session_state.altura_slider = 0.0
@@ -313,7 +324,7 @@ inicializar_estado_de_sesion()
 # --- SECCIONES DE LA APLICACIÓN ---
 # -------------------------------------------------
 
-# --- 1. CÁLCULO Y GRÁFICOS (SIN CAMBIOS)
+# --- 1. CÁLCULO Y GRÁFICOS
 def render_calculadora_y_graficos():
     st.title("🌳 1. Cálculo de Captura de Carbono")
     
@@ -343,16 +354,19 @@ def render_calculadora_y_graficos():
             st.subheader("Entrada de Lote por Especie")
             
             with st.form("lote_form", clear_on_submit=False):
+                # El selectbox usa las especies por defecto (hardcodeadas) + la opción manual.
                 especie_sel = st.selectbox("Especie / Tipo de Árbol", list(DENSIDADES.keys()), key='especie_sel', index=list(DENSIDADES.keys()).index(st.session_state.especie_sel) if st.session_state.especie_sel in DENSIDADES else 0)
                 
                 if especie_sel == 'Densidad Manual (g/cm³)':
                     st.number_input("Densidad de madera (ρ, g/cm³)", min_value=0.1, max_value=1.5, value=st.session_state.densidad_manual_input, step=0.01, key='densidad_manual_input')
                 else:
                     rho_value = DENSIDADES[especie_sel]
-                    st.info(f"Densidad de la madera seleccionada: **{rho_value} g/cm³**")
+                    st.info(f"Densidad de la madera por defecto: **{rho_value} g/cm³**")
+                    st.caption("ℹ️ Para usar una densidad diferente o una especie nueva, ingrese a la sección **'5. Gestión de Especie'** o seleccione **'Densidad Manual'** aquí.")
                 
                 st.markdown("---")
                 
+                # Estos sliders representan las mediciones reales del lote a registrar
                 st.number_input("Cantidad de Árboles (n)", min_value=0, step=1, key='cantidad_input', value=st.session_state.cantidad_input)
                 st.slider("DAP promedio (cm)", min_value=0.0, max_value=150.0, step=1.0, key='dap_slider', help="Diámetro a la Altura del Pecho. 🌳", value=st.session_state.dap_slider)
                 st.slider("Altura promedio (m)", min_value=0.0, max_value=50.0, step=0.1, key='altura_slider', help="Altura total del árbol. 🌲", value=st.session_state.altura_slider)
@@ -390,7 +404,11 @@ def render_calculadora_y_graficos():
                     
                 st.markdown("---")
                 st.caption("Detalle de los Lotes Añadidos (Unidades en Toneladas):")
-                st.dataframe(df_inventario_completo.drop(columns=['Carbono Lote (Ton)', 'Detalle Cálculo']), use_container_width=True, hide_index=True)
+                # Asegurar que df_inventario_completo es un DataFrame antes de llamar a drop
+                if isinstance(df_inventario_completo, pd.DataFrame) and 'Carbono Lote (Ton)' in df_inventario_completo.columns:
+                     st.dataframe(df_inventario_completo.drop(columns=['Carbono Lote (Ton)', 'Detalle Cálculo']), use_container_width=True, hide_index=True)
+                else:
+                    st.dataframe(df_inventario_completo, use_container_width=True, hide_index=True)
                 
             else:
                 st.info("Añade el primer lote de árboles para iniciar el inventario.")
@@ -427,6 +445,7 @@ def render_calculadora_y_graficos():
         st.markdown("## 1.3 Detalle Técnico del Lote (Cálculo en kg)")
         if not st.session_state.inventario_list: st.info("Aún no hay lotes de árboles registrados.")
         else:
+            # Corrección para iterar correctamente sobre la lista de diccionarios
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP: {row['DAP (cm)']:.1f} cm" 
                 for i, row in enumerate(st.session_state.inventario_list)
@@ -442,6 +461,7 @@ def render_calculadora_y_graficos():
         if not st.session_state.inventario_list: st.info("Por favor, registre al menos un lote de árboles para iniciar la simulación.")
         else:
             df_inventario = df_inventario_completo 
+            # Corrección para iterar correctamente sobre la lista de diccionarios
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
                 for i, row in enumerate(st.session_state.inventario_list) 
@@ -455,8 +475,12 @@ def render_calculadora_y_graficos():
             with col_anios: anios_simulacion = st.slider("Años de Proyección", min_value=1, max_value=50, value=20, step=1)
                 
             with col_factores:
-                factor_inicial = FACTORES_CRECIMIENTO.get(especie_sim, FACTORES_CRECIMIENTO['Factor Manual'])
+                # Usar factor_inicial basado en las especies por defecto, si no existe, usar 'Factor Manual'
+                factor_inicial = FACTORES_CRECIMIENTO.get(especie_sim, FACTORES_CRECIMIENTO.get('Factor Manual', {'DAP': 0.05, 'Altura': 0.05, 'Agua': 0.0}))
+                
                 st.markdown(f"### Factores de Crecimiento Anual (Especie: **{especie_sim}**)")
+                st.caption("Estos factores se basan en valores por defecto. Para usar data real, refine la información en la sección **'5. Gestión de Especie'**.")
+                
                 factor_dap_input = st.number_input("Tasa de Crecimiento Anual DAP (%)", min_value=0.01, max_value=0.30, value=factor_inicial['DAP'], step=0.01, format="%.2f", key='factor_dap_sim')
                 factor_altura_input = st.number_input("Tasa de Crecimiento Anual Altura (%)", min_value=0.01, max_value=0.30, value=factor_inicial['Altura'], step=0.01, format="%.2f", key='factor_alt_sim')
                 max_dap_input = st.number_input("DAP Máximo de Madurez (cm)", min_value=10.0, max_value=300.0, value=100.0, step=10.0)
@@ -540,10 +564,11 @@ def render_gap_cpassa():
         co2e_restante = max(0, emisiones_sede_miles_ton - co2e_proyecto_miles_ton)
         st.metric("CO2e Restante por Mitigar (Miles de Ton)", f"**{co2e_restante:,.2f} Miles Ton**")
 
-# --- 5. GESTIÓN DE ESPECIE (CORRECCIÓN DE EDICIÓN TOTAL Y PERSISTENCIA APLICADA) ---
+# --- 5. GESTIÓN DE ESPECIE (EDICIÓN TOTAL Y PERSISTENCIA APLICADA) ---
 def render_gestion_especie():
     st.title("🌿 5. Gestión de Datos de Crecimiento de Especies")
     st.markdown("Edite, **agregue o elimine** entradas en la Base de Datos Histórica. Esta información se **guarda de forma persistente** y ayuda a refinar las simulaciones de crecimiento futuras.")
+    st.info("⚠️ **IMPORTANTE:** Esta tabla guarda el **histórico de crecimiento** y la **densidad** de especies. La Densidad de madera (ρ) de la especie se usa en el cálculo de biomasa. Agregue aquí nuevas especies si no están en el inventario inicial.")
 
     st.subheader("Base de Datos Histórica de Especies (Editable)")
 
@@ -552,9 +577,12 @@ def render_gestion_especie():
     
     # Si el DF está vacío, proporcionamos una estructura inicial para que el editor funcione bien.
     if df_actual.empty:
-        df_base = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
+        df_base = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)', 'Densidad (g/cm³)'])
     else:
-        df_base = df_actual.fillna(0) # Reemplazamos NaNs con 0 para evitar errores en el data_editor
+        # Añadimos la columna de Densidad a la edición, si no existe (para versiones antiguas)
+        if 'Densidad (g/cm³)' not in df_actual.columns:
+            df_actual['Densidad (g/cm³)'] = 0.0
+        df_base = df_actual.fillna(0) 
 
     # 2. El Widget de Edición de Datos
     df_edit = st.data_editor(
@@ -563,6 +591,7 @@ def render_gestion_especie():
         use_container_width=True,
         column_config={
             "Especie": st.column_config.TextColumn("Especie", help="Nombre de la nueva especie o una existente", required=True),
+            "Densidad (g/cm³)": st.column_config.NumberColumn("Densidad (g/cm³)", format="%.2f", help="Densidad real de la madera (ρ).", min_value=0.1, max_value=1.5, required=True),
             "Año": st.column_config.NumberColumn("Año", help="Año de medición (e.g., 1, 5, 10)", min_value=1, required=True, format="%d"),
             "DAP (cm)": st.column_config.NumberColumn("DAP (cm)", format="%.2f", help="Diámetro a la altura del pecho", min_value=0.0),
             "Altura (m)": st.column_config.NumberColumn("Altura (m)", format="%.2f", help="Altura total del árbol", min_value=0.0),
@@ -573,22 +602,23 @@ def render_gestion_especie():
     # 3. Guardar los cambios
     if st.button("💾 Guardar Cambios en la BD Histórica"):
         
-        # Validar y filtrar filas: Debe tener un nombre de especie y al menos un valor numérico > 0
-        cols_a_validar = ['DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)']
+        # Validar y filtrar filas: Debe tener nombre de especie y Densidad > 0
+        cols_a_validar = ['DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)', 'Densidad (g/cm³)', 'Año']
         df_edit_clean = df_edit.replace('', pd.NA).dropna(subset=['Especie'])
         
+        # CRÍTICO: Asegurar que Densidad sea > 0 y la Especie no esté vacía.
         df_validas = df_edit_clean[
             (df_edit_clean['Especie'].astype(str).str.strip() != "") & 
-            (pd.to_numeric(df_edit_clean[cols_a_validar].fillna(0).sum(axis=1), errors='coerce').fillna(0) > 0)
+            (pd.to_numeric(df_edit_clean['Densidad (g/cm³)'], errors='coerce').fillna(0) > 0)
         ].copy()
         
         if df_validas.empty and not df_edit.empty:
-            st.warning("No se guardaron cambios. Asegúrate de ingresar un nombre de Especie y al menos un valor numérico (DAP, Altura o Agua) mayor a cero en cada fila.")
+            st.warning("No se guardaron cambios. Asegúrate de ingresar un nombre de Especie y una Densidad de madera (g/cm³) mayor a cero en cada fila.")
             return
         
         # Aseguramos que los tipos de datos sean correctos antes de guardar
         df_validas['Especie'] = df_validas['Especie'].astype(str)
-        for col in ['Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)']:
+        for col in cols_a_validar:
             df_validas[col] = pd.to_numeric(df_validas[col], errors='coerce').fillna(0)
 
 
@@ -603,7 +633,7 @@ def render_gestion_especie():
     st.dataframe(st.session_state.especies_bd, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------
-# --- FUNCIÓN PRINCIPAL DE LA APLICACIÓN (SIN CAMBIOS) ---
+# --- FUNCIÓN PRINCIPAL DE LA APLICACIÓN ---
 # -------------------------------------------------
 def main_app():
     
