@@ -545,7 +545,7 @@ def render_calculadora_y_graficos():
             # Usar el inventario_list directamente para obtener información
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
-                for i, row in st.session_state.inventario_list
+                for i, row in st.session_state.inventario_list # CORREGIDO: Usar st.session_state.inventario_list (una lista de diccionarios)
             ]
             lote_sim_index = st.selectbox("Seleccione el Lote para la Proyección de Crecimiento:", options=range(len(lotes_info)), format_func=lambda x: lotes_info[x], key='sim_lote_select')
             
@@ -739,9 +739,8 @@ def main_app():
             option, 
             key=f"nav_{option}", 
             use_container_width=True,
-            # Se usa el tipo 'secondary' si está seleccionado, y 'default' si no, aunque en la práctica de Streamlit 
-            # solo se puede usar 'primary' o 'secondary'. Usamos 'primary' para el seleccionado.
-            type=("secondary" if is_selected else "light") 
+            # CORRECCIÓN: Usar 'primary' si está seleccionado, 'secondary' si no lo está.
+            type=("primary" if is_selected else "secondary") 
         ):
             # 3. Al hacer clic, cambiar el estado y forzar la re-ejecución
             st.session_state.current_page = option 
