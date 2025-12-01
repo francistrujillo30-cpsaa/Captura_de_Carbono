@@ -178,16 +178,27 @@ def recalcular_inventario_completo(inventario_list):
     """
     Toma la lista de entradas (List[Dict]) y genera un DataFrame completo y limpio, 
     incluyendo CO2e, Consumo de Agua y Costo Total (Plantones + Agua).
+    
+    Incluye un FIX para manejar la ausencia de columnas en datos antiguos de session_state.
     """
     if not inventario_list:
         return pd.DataFrame(columns=list(df_columns_types.keys()) + columnas_salida).astype({**df_columns_types, **dict.fromkeys(columnas_salida, float)})
 
-    # Crear DF base y limpiar tipos
+    # 1. Crear DF base
     df_base = pd.DataFrame(inventario_list)
     df_calculado = df_base.copy()
     
-    # Asegurar que todas las columnas numéricas sean números (incluyendo las nuevas)
+    # 2. FIX CRÍTICO: Asegurar que todas las columnas de entrada requeridas existan
+    required_input_cols = list(df_columns_types.keys())
+    for col in required_input_cols:
+        if col not in df_calculado.columns:
+            # Añadir columna faltante con un valor predeterminado seguro
+            default_val = "" if col == 'Detalle Cálculo' or col == 'Especie' else 0.0
+            df_calculado[col] = default_val
+    
+    # 3. Asegurar que todas las columnas numéricas sean números
     for col in df_columns_numeric:
+        # La columna está garantizada de existir en este punto
         df_calculado[col] = pd.to_numeric(df_calculado[col], errors='coerce').fillna(0)
     
     resultados_calculo = []
