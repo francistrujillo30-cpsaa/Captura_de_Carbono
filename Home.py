@@ -202,20 +202,22 @@ def agregar_lote():
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
     st.session_state.altura_slider = 0.0
-    st.session_state.especie_sel = list(DENSIDADES.keys())[0]
+    # Aseguramos que la especie seleccionada se restablezca a la primera opción si la clave existe
+    if 'especie_sel' in st.session_state and list(DENSIDADES.keys()):
+        st.session_state.especie_sel = list(DENSIDADES.keys())[0]
     
-    # ¡FIX! Usar st.rerun()
+    # FIX: Usar st.rerun()
     st.rerun() 
     
 def deshacer_ultimo_lote():
     if st.session_state.inventario_list:
         st.session_state.inventario_list.pop() # Eliminar el último diccionario de la lista
-        # ¡FIX! Usar st.rerun()
+        # FIX: Usar st.rerun()
         st.rerun()
 
 def limpiar_inventario():
     st.session_state.inventario_list = [] # Resetear a lista vacía
-    # ¡FIX! Usar st.rerun()
+    # FIX: Usar st.rerun()
     st.rerun()
 
 def reiniciar_app_completo():
@@ -223,7 +225,7 @@ def reiniciar_app_completo():
     keys_to_delete = list(st.session_state.keys())
     for key in keys_to_delete:
         del st.session_state[key]
-    # ¡FIX! Usar st.rerun()
+    # FIX: Usar st.rerun()
     st.rerun()
 
     
@@ -256,27 +258,35 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     return processed_data
 
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (REVISADA) ---
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRÍTICA PARA EVITAR KEYERROR) ---
 def inicializar_estado_de_sesion():
-    # CRÍTICO: Inicializar el inventario como una lista nativa de Python
+    # CRÍTICO: Inicializar todas las variables necesarias antes de que cualquier widget las use.
     if 'inventario_list' not in st.session_state:
         st.session_state.inventario_list = [] 
     
-    # Inicialización de otras variables
     if 'especies_bd' not in st.session_state: 
         st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
+        
+    # Variables del proyecto
     if 'proyecto' not in st.session_state: st.session_state.proyecto = ""
     if 'hectareas' not in st.session_state: st.session_state.hectareas = 0.0
+    
+    # Variables de Inputs (las que causaban el KeyError)
     if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 0.0
     if 'altura_slider' not in st.session_state: st.session_state.altura_slider = 0.0
-    if 'especie_sel' not in st.session_state: st.session_state.especie_sel = list(DENSIDADES.keys())[0]
     if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
+    if 'densidad_manual_input' not in st.session_state: st.session_state.densidad_manual_input = 0.5 # Valor por defecto seguro
+    
+    # Inicialización de especie seleccionada
+    if 'especie_sel' not in st.session_state: 
+        st.session_state.especie_sel = list(DENSIDADES.keys())[0] if DENSIDADES else ""
+
 
     # Defensa contra versiones antiguas: si existe el DF corrupto, lo borramos.
     if 'inventario_df' in st.session_state:
         del st.session_state.inventario_df
         st.warning("⚠️ Se detectó y eliminó una variable de sesión antigua (inventario_df). Se forzará un reinicio.")
-        # ¡FIX! Usar st.rerun()
+        # FIX: Usar st.rerun()
         st.rerun()
         
 inicializar_estado_de_sesion()
@@ -298,11 +308,12 @@ def render_calculadora_y_graficos():
     col_proj, col_hectareas = st.columns([2, 1])
 
     with col_proj:
-        nombre_proyecto = st.text_input("Nombre del Proyecto (Opcional)", value=st.session_state.proyecto, placeholder="Ej: Reforestación Bosque Seco 2024", key='proyecto_input')
+        # Usamos el key='proyecto' para que Streamlit sepa que es el mismo widget
+        nombre_proyecto = st.text_input("Nombre del Proyecto (Opcional)", value=st.session_state.proyecto, placeholder="Ej: Reforestación Bosque Seco 2024", key='proyecto') 
         st.session_state.proyecto = nombre_proyecto
 
     with col_hectareas:
-        hectareas = st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas_input', help="Dejar en 0 si no se aplica o no se conoce el dato.")
+        hectareas = st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas', help="Dejar en 0 si no se aplica o no se conoce el dato.")
         st.session_state.hectareas = hectareas
             
     st.divider()
@@ -318,18 +329,23 @@ def render_calculadora_y_graficos():
             st.subheader("Entrada de Lote por Especie")
             
             with st.form("lote_form", clear_on_submit=False):
-                especie_sel = st.selectbox("Especie / Tipo de Árbol", list(DENSIDADES.keys()), key='especie_sel')
+                # El valor por defecto es el de session_state
+                especie_sel = st.selectbox("Especie / Tipo de Árbol", list(DENSIDADES.keys()), key='especie_sel', index=list(DENSIDADES.keys()).index(st.session_state.especie_sel) if st.session_state.especie_sel in DENSIDADES else 0)
                 
                 if especie_sel == 'Densidad Manual (g/cm³)':
-                    st.number_input("Densidad de madera (ρ, g/cm³)", min_value=0.1, max_value=1.5, value=0.5, step=0.01, key='densidad_manual_input')
+                    # El valor por defecto es el de session_state
+                    st.number_input("Densidad de madera (ρ, g/cm³)", min_value=0.1, max_value=1.5, value=st.session_state.densidad_manual_input, step=0.01, key='densidad_manual_input')
                 else:
                     rho_value = DENSIDADES[especie_sel]
                     st.info(f"Densidad de la madera seleccionada: **{rho_value} g/cm³**")
                 
                 st.markdown("---")
                 
+                # El valor por defecto es el de session_state
                 st.number_input("Cantidad de Árboles (n)", min_value=0, step=1, key='cantidad_input', value=st.session_state.cantidad_input)
+                # El valor por defecto es el de session_state
                 st.slider("DAP promedio (cm)", min_value=0.0, max_value=150.0, step=1.0, key='dap_slider', help="Diámetro a la Altura del Pecho. 🌳", value=st.session_state.dap_slider)
+                # El valor por defecto es el de session_state
                 st.slider("Altura promedio (m)", min_value=0.0, max_value=50.0, step=0.1, key='altura_slider', help="Altura total del árbol. 🌲", value=st.session_state.altura_slider)
                 
                 st.form_submit_button("➕ Añadir Lote al Inventario", on_click=agregar_lote)
@@ -407,7 +423,7 @@ def render_calculadora_y_graficos():
         st.markdown("## 1.3 Detalle Técnico del Lote (Cálculo en kg)")
         if not st.session_state.inventario_list: st.info("Aún no hay lotes de árboles registrados.")
         else:
-            # CRÍTICO: Usar la lista para mostrar la info del lote
+            # CRÍTICO: Usar enumerate() para obtener índice (i) y valor (row)
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP: {row['DAP (cm)']:.1f} cm" 
                 for i, row in enumerate(st.session_state.inventario_list)
@@ -423,9 +439,10 @@ def render_calculadora_y_graficos():
         if not st.session_state.inventario_list: st.info("Por favor, registre al menos un lote de árboles para iniciar la simulación.")
         else:
             df_inventario = df_inventario_completo # Usar el DF completo calculado
+            # FIX APLICADO: Usar enumerate() para obtener índice (i) y valor (row)
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
-                for i, row in st.session_state.inventario_list
+                for i, row in enumerate(st.session_state.inventario_list) # <-- CORREGIDO
             ]
             lote_sim_index = st.selectbox("Seleccione el Lote para la Proyección de Crecimiento:", options=range(len(lotes_info)), format_func=lambda x: lotes_info[x], key='sim_lote_select')
             
@@ -551,7 +568,7 @@ def render_gestion_especie():
         st.session_state.especies_bd = new_data.sort_values(by=['Especie', 'Año'])
 
         st.success(f"Datos de crecimiento y agua para '{especie_a_gestionar}' actualizados y guardados.")
-        # ¡FIX! Usar st.rerun()
+        # FIX: Usar st.rerun()
         st.rerun()
 
     st.markdown("---")
