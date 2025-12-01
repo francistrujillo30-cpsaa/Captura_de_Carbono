@@ -61,12 +61,10 @@ def init_session_state():
 
     # Variables de gestión de datos
     if 'df_densidades' not in st.session_state:
-        st.session_state.df_densidades = DF_BASE.copy()
-        # Nota: Si se añade una nueva columna en la base, debe hacerse aquí para evitar errores al cargar.
-        if 'Costo Anual (Soles/árbol)' not in st.session_state.df_densidades.columns:
-             # Inicializar la columna para la gestión de datos, si es necesario, 
-             # aunque el cálculo principal usará la entrada manual del inventario.
-             st.session_state.df_densidades['Costo Anual (Soles/árbol)'] = [15.0, 10.0, 12.0, 8.0]
+        df_temp = DF_BASE.copy()
+        # Inicializar la columna de costo de referencia en la BD base
+        df_temp['Costo Anual (Soles/árbol)'] = [15.0, 10.0, 12.0, 8.0]
+        st.session_state.df_densidades = df_temp
              
     if 'edicion_activa' not in st.session_state:
         st.session_state.edicion_activa = False
@@ -87,8 +85,7 @@ def reiniciar_app_completo():
     keys_to_delete = list(st.session_state.keys())
     for key in keys_to_delete:
         del st.session_state[key]
-    # Forzar un rerun de la app
-    # st.experimental_rerun() # Usar st.rerun() en versiones modernas
+    # Usamos st.rerun() para forzar el reinicio después de borrar el estado
     st.rerun()
     
 # --- FUNCIONES DE CÁLCULO ---
@@ -125,6 +122,8 @@ def calcular_captura_y_costo(df_inventario, df_densidades_hist):
 def simular_crecimiento(df_inventario_completo, df_densidades_hist, anio_inicio, anios_simulacion=15):
     """Simula la captura de CO2e de la biomasa a lo largo de los años."""
     df_sim = pd.DataFrame()
+    # Asegurar que los años sean enteros
+    anios_simulacion = int(anios_simulacion)
     anos = np.arange(1, anios_simulacion + 1)
     
     # Iterar sobre cada lote en el inventario
@@ -138,9 +137,10 @@ def simular_crecimiento(df_inventario_completo, df_densidades_hist, anio_inicio,
             dbh_anual = coef['Crecimiento Anual DBH (cm/año)']
             densidad = coef['Densidad (Kg/m3)']
             factor_biom = coef['Factor BIOM (Kg Biom/Kg C)']
-            factor_co2e = coef['Factor CO2e (Kg CO2e/Kg C)']
+            factor_co2e = coef = coef['Factor CO2e (Kg CO2e/Kg C)'] # Error corregido en la lógica de asignación
         except KeyError:
             # En caso de que la especie no esté en la BD histórica, saltar el lote
+            st.error(f"Error: Especie '{especie}' no encontrada en la base de datos de coeficientes.")
             continue
             
         # Asumiendo un DAP (DBH) inicial de 5 cm (50 mm)
@@ -272,14 +272,17 @@ def render_calculadora_y_graficos():
                     value=f"Lote {len(st.session_state.inventario_list) + 1}"
                 )
                 
-                # --- NUEVO CAMPO: Costo Anual por Plantón (Obligatorio) ---
+                # --- CAMPO: Costo Anual por Plantón ---
                 col_costo, col_lat, col_lon = st.columns(3)
 
+                # Obtener costo de referencia de la BD base para sugerir valor
+                costo_ref = df_densidades_hist.loc[especie_seleccionada, 'Costo Anual (Soles/árbol)']
+                
                 costo_planton = col_costo.number_input(
                     "💰 Costo Anual de Mantenimiento por Árbol (Soles):",
                     min_value=0.0,
                     step=0.5,
-                    value=10.0, # Valor de ejemplo/sugerido
+                    value=float(costo_ref) if especie_seleccionada else 10.0, 
                     key="input_costo",
                     format="%.2f"
                 )
@@ -292,18 +295,24 @@ def render_calculadora_y_graficos():
                 submit_button = st.form_submit_button("Guardar Lote")
                 
                 if submit_button:
-                    nuevo_lote = {
-                        'Especie': especie_seleccionada,
-                        'Cantidad': int(cantidad_arboles),
-                        'Ubicación': ubicacion,
-                        'Costo Plantón (Soles/árbol)': float(costo_planton), # CAMPO NUEVO Y CRÍTICO
-                        'Latitud': latitud,
-                        'Longitud': longitud
-                    }
-                    st.session_state.inventario_list.append(nuevo_lote)
-                    st.session_state.lotes_mapa.append({'lat': latitud, 'lon': longitud, 'tooltip': f"{ubicacion} - {especie_seleccionada}"})
-                    st.success(f"Lote '{ubicacion}' de {cantidad_arboles} árboles añadido correctamente.")
-                    st.rerun() # Rerun para actualizar la tabla inmediatamente
+                    # Validar datos antes de guardar (por si acaso)
+                    if not especie_seleccionada:
+                        st.error("Debe seleccionar una especie.")
+                    elif cantidad_arboles <= 0:
+                        st.error("La cantidad de árboles debe ser mayor a cero.")
+                    else:
+                        nuevo_lote = {
+                            'Especie': especie_seleccionada,
+                            'Cantidad': int(cantidad_arboles),
+                            'Ubicación': ubicacion,
+                            'Costo Plantón (Soles/árbol)': float(costo_planton), # CAMPO CRÍTICO
+                            'Latitud': latitud,
+                            'Longitud': longitud
+                        }
+                        st.session_state.inventario_list.append(nuevo_lote)
+                        st.session_state.lotes_mapa.append({'lat': latitud, 'lon': longitud, 'tooltip': f"{ubicacion} - {especie_seleccionada}"})
+                        st.success(f"Lote '{ubicacion}' de {cantidad_arboles} árboles añadido correctamente.")
+                        st.rerun() # Rerun para actualizar la tabla inmediatamente
 
         # Tabla del Inventario
         st.markdown("### Inventario Detallado por Lote")
@@ -335,7 +344,7 @@ def render_calculadora_y_graficos():
                 st.session_state.inventario_list = []
                 st.session_state.lotes_mapa = []
                 st.session_state.df_simulacion_global = pd.DataFrame() # También borrar simulación
-                st.success("Inventario completamente borrado. Por favor, recargue la página para reiniciar los cálculos.")
+                st.success("Inventario completamente borrado. Recargando la página para reiniciar los cálculos...")
                 st.rerun()
     
     # -----------------------------------------------------------
@@ -417,42 +426,46 @@ def render_calculadora_y_graficos():
                 
                 with col_sel_lote:
                     st.markdown("##### 🔍 Detalle por Lote")
-                    lote_sim_seleccionado = st.selectbox("Seleccione el Lote para el Detalle:", options=lotes_simulados, key="sel_lote_sim")
-                
-                df_detalle_lote = df_simulacion[df_simulacion['Lote'] == lote_sim_seleccionado]
-                
-                st.markdown(f"**Detalle de Crecimiento para {lote_sim_seleccionado} ({df_detalle_lote['Especie'].iloc[0]})**")
-                
-                fig_detalle = go.Figure()
-                
-                # Línea de DAP
-                fig_detalle.add_trace(go.Scatter(
-                    x=df_detalle_lote['Año Calendario'], 
-                    y=df_detalle_lote['DAP (mm)'], 
-                    mode='lines+markers', 
-                    name='DAP (mm)',
-                    yaxis='y1'
-                ))
-                
-                # Línea de Captura CO2e
-                fig_detalle.add_trace(go.Scatter(
-                    x=df_detalle_lote['Año Calendario'], 
-                    y=(df_detalle_lote['Captura Lote CO2e (Kg)'] / 1000), 
-                    mode='lines+markers', 
-                    name='CO₂e Capturado (Ton)',
-                    yaxis='y2'
-                ))
-                
-                # Configuración de ejes
-                fig_detalle.update_layout(
-                    title=f"Crecimiento de DAP y Captura CO₂e del Lote",
-                    xaxis=dict(title="Año"),
-                    yaxis=dict(title="DAP (mm)", showgrid=False),
-                    yaxis2=dict(title="CO₂e Capturado (Ton)", overlaying='y', side='right'),
-                    legend=dict(x=0.01, y=0.99)
-                )
-                
-                st.plotly_chart(fig_detalle, use_container_width=True)
+                    # Manejar el caso de que lotes_simulados esté vacío, aunque no debería ocurrir si df_simulacion no está vacío.
+                    if lotes_simulados:
+                        lote_sim_seleccionado = st.selectbox("Seleccione el Lote para el Detalle:", options=lotes_simulados, key="sel_lote_sim")
+                        
+                        df_detalle_lote = df_simulacion[df_simulacion['Lote'] == lote_sim_seleccionado]
+                        
+                        st.markdown(f"**Detalle de Crecimiento para {lote_sim_seleccionado} ({df_detalle_lote['Especie'].iloc[0]})**")
+                        
+                        fig_detalle = go.Figure()
+                        
+                        # Línea de DAP
+                        fig_detalle.add_trace(go.Scatter(
+                            x=df_detalle_lote['Año Calendario'], 
+                            y=df_detalle_lote['DAP (mm)'], 
+                            mode='lines+markers', 
+                            name='DAP (mm)',
+                            yaxis='y1'
+                        ))
+                        
+                        # Línea de Captura CO2e
+                        fig_detalle.add_trace(go.Scatter(
+                            x=df_detalle_lote['Año Calendario'], 
+                            y=(df_detalle_lote['Captura Lote CO2e (Kg)'] / 1000), 
+                            mode='lines+markers', 
+                            name='CO₂e Capturado (Ton)',
+                            yaxis='y2'
+                        ))
+                        
+                        # Configuración de ejes
+                        fig_detalle.update_layout(
+                            title=f"Crecimiento de DAP y Captura CO₂e del Lote",
+                            xaxis=dict(title="Año"),
+                            yaxis=dict(title="DAP (mm)", showgrid=False),
+                            yaxis2=dict(title="CO₂e Capturado (Ton)", overlaying='y', side='right'),
+                            legend=dict(x=0.01, y=0.99)
+                        )
+                        
+                        st.plotly_chart(fig_detalle, use_container_width=True)
+                    else:
+                        st.info("No hay datos de lotes disponibles en la simulación para mostrar el detalle.")
 
 
     # -----------------------------------------------------------
@@ -625,7 +638,8 @@ def render_gestion_datos():
         # Validar que los campos de índice se mantengan (Nombres de Especie)
         if edited_df.index.has_duplicates:
             st.error("Error: Las especies no pueden tener nombres duplicados. Revise los índices.")
-        elif any(col not in edited_df.columns for col in DF_BASE.columns):
+        # Se asegura de que todas las columnas originales sigan presentes (excepto la de costo que es nueva y se maneja en el DF_BASE)
+        elif not all(col in edited_df.columns for col in DF_BASE.columns.drop('Captura CO2e (Kg/año)', errors='ignore')):
              st.error("Error: No se puede eliminar ninguna columna esencial del DataFrame. Reinicie si es necesario.")
         else:
             # Reemplazar el DataFrame en el estado de sesión
@@ -669,7 +683,7 @@ def main_app():
     
     # 1. Barra Lateral (Sidebar)
     with st.sidebar:
-        st.image("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRz-8Z4wR3-1eD-4X2l9Q7Uj7Jk8j-1c8Q3xQ&s", width=80)
+        # st.image("URL de la imagen del logo", width=80) # Reemplazar con el URL de su logo
         st.title("🌳 Calculadora CO₂e")
         st.markdown(f"**Proyecto:** {st.session_state.proyecto['nombre']}")
         st.markdown(f"**Año Base:** {st.session_state.proyecto['anio_plantacion']}")
@@ -689,7 +703,6 @@ def main_app():
         for option in options:
             is_selected = (st.session_state.current_page == option)
             
-            # Usamos un botón de Streamlit para la navegación
             # El tipo se ajusta para simular un botón seleccionado
             button_type = "primary" if is_selected else "secondary"
             
@@ -703,6 +716,7 @@ def main_app():
                 st.rerun() # Forzar el cambio de página
 
         st.markdown("---")
+        # Botón de reinicio con el tipo correcto para Streamlit
         if st.button("🔄 Reiniciar Aplicación (Borrar Datos)", type="secondary"):
             reiniciar_app_completo()
 
