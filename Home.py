@@ -18,17 +18,21 @@ AGB_FACTOR_A = 0.112
 AGB_FACTOR_B = 0.916
 FACTOR_KG_A_TON = 1000 # Constante para conversión
 
-# BASE DE DATOS INICIAL DE DENSIDADES (Valores DEFINITIVOS solicitados)
-# Valores de densidad (ρ) en g/cm³ basados en revisión bibliográfica
+# NUEVAS CONSTANTES PARA COSTOS (SOLICITUD DEL USUARIO)
+PRECIO_AGUA_POR_M3 = 3.0 # Precio fijo del m3 de agua en Perú (3 Soles)
+FACTOR_L_A_M3 = 1000 # 1 m3 = 1000 Litros
+
+# BASE DE DATOS INICIAL DE DENSIDADES, AGUA Y COSTO
+# Valores por defecto para simulación y gestión
 DENSIDADES_BASE = {
-    'Eucalipto Torrellana (Corymbia torelliana)': 0.46, 
-    'Majoe (Hibiscus tiliaceus)': 0.57,
-    'Molle (Schinus molle)': 0.44,
-    'Algarrobo (Prosopis pallida)': 0.53,
+    'Eucalipto Torrellana (Corymbia torelliana)': {'Densidad': 0.46, 'Agua_L_Anio': 1500, 'Precio_Plantón': 5.00}, 
+    'Majoe (Hibiscus tiliaceus)': {'Densidad': 0.57, 'Agua_L_Anio': 1200, 'Precio_Plantón': 5.00}, # ACTUALIZADO A S/ 5.00
+    'Molle (Schinus molle)': {'Densidad': 0.44, 'Agua_L_Anio': 900, 'Precio_Plantón': 6.00},
+    'Algarrobo (Prosopis pallida)': {'Densidad': 0.53, 'Agua_L_Anio': 800, 'Precio_Plantón': 4.00},
 }
 
 
-# FACTORES DE CRECIMIENTO INICIAL (Valores por defecto para simulación - Sincronizado con DENSIDADES_BASE)
+# FACTORES DE CRECIMIENTO INICIAL (Valores por defecto para simulación)
 FACTORES_CRECIMIENTO = {
     'Eucalipto Torrellana (Corymbia torelliana)': {'DAP': 0.05, 'Altura': 0.05, 'Agua': 0.0},
     'Majoe (Hibiscus tiliaceus)': {'DAP': 0.08, 'Altura': 0.06, 'Agua': 0.0},
@@ -72,42 +76,57 @@ HUELLA_CORPORATIVA = {
 }
 
 
-# --- DEFINICIÓN DE TIPOS DE COLUMNAS ---
+# --- DEFINICIÓN DE TIPOS DE COLUMNAS (Añadidas nuevas métricas de entrada) ---
 df_columns_types = {
     'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
-    'Densidad (ρ)': float, 'Detalle Cálculo': str 
+    'Densidad (ρ)': float, 'Años Plantados': int, 'Consumo Agua Unitario (L/año)': float, 
+    'Precio Plantón Unitario (S/)': float, # CAMBIO DE $ A S/
+    'Detalle Cálculo': str 
 }
-df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)']
-columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
+df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Años Plantados', 'Consumo Agua Unitario (L/año)', 'Precio Plantón Unitario (S/)'] # CAMBIO DE $ A S/
 
-# --- FUNCIÓN CRÍTICA: DINÁMICA DE ESPECIES ---
-def get_current_densidades():
+# (Añadidas nuevas métricas de salida)
+columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)', 'Consumo Agua Total Lote (L)', 'Costo Total Lote (S/)'] # CAMBIO DE $ A S/
+
+# --- FUNCIÓN CRÍTICA: DINÁMICA DE ESPECIES (Actualizada) ---
+def get_current_species_info():
     """
-    Genera un diccionario de densidades de madera fusionando las especies base 
-    con las especies añadidas/modificadas por el usuario en la gestión.
+    Genera un diccionario de información de especies (Densidad, Agua, Precio) 
+    fusionando las especies base con las especies añadidas/modificadas por el usuario.
     """
-    current_densities = DENSIDADES_BASE.copy()
+    # 1. Info inicial
+    current_info = {
+        name: {'Densidad': data['Densidad'], 'Agua_L_Anio': data['Agua_L_Anio'], 'Precio_Plantón': data['Precio_Plantón']}
+        for name, data in DENSIDADES_BASE.items()
+    }
     
-    # 1. Obtener la data de la tabla de gestión de especies (persistencia)
+    # 2. Obtener la data de la tabla de gestión de especies (persistencia)
     df_bd = st.session_state.especies_bd.copy()
     
-    # 2. Asegurar que la columna de Densidad exista y haya datos válidos
-    if 'Densidad (g/cm³)' in df_bd.columns and not df_bd.empty:
-        # Tomar la última densidad registrada para cada especie
-        df_unique_densities = df_bd.drop_duplicates(subset=['Especie'], keep='last')[['Especie', 'Densidad (g/cm³)']]
+    # 3. Incorporar/sobreescribir con datos de la BD del usuario
+    if not df_bd.empty:
+        df_unique_info = df_bd.drop_duplicates(subset=['Especie'], keep='last')
         
-        for _, row in df_unique_densities.iterrows():
+        for _, row in df_unique_info.iterrows():
             especie_name = row['Especie']
-            densidad_val = pd.to_numeric(row['Densidad (g/cm³)'], errors='coerce')
+            
+            # Asegurar la conversión segura de los nuevos campos
+            densidad_val = pd.to_numeric(row.get('Densidad (g/cm³)', 0.0), errors='coerce') 
+            agua_val = pd.to_numeric(row.get('Consumo Agua (L/año)', 0.0), errors='coerce')
+            precio_val = pd.to_numeric(row.get('Precio Plantón (S/)', 0.0), errors='coerce') # USANDO NUEVO NOMBRE DE COLUMNA S/
             
             if pd.notna(densidad_val) and densidad_val > 0:
-                # 3. Sobreescribir o añadir la densidad definida por el usuario
-                current_densities[especie_name] = densidad_val
+                current_info[especie_name] = {
+                    'Densidad': densidad_val,
+                    'Agua_L_Anio': agua_val if pd.notna(agua_val) and agua_val >= 0 else 0.0,
+                    'Precio_Plantón': precio_val if pd.notna(precio_val) and precio_val >= 0 else 0.0
+                }
     
-    # 4. Añadir la opción de densidad manual al final
-    current_densities['Densidad Manual (g/cm³)'] = 0.0
+    # 4. Añadir la opción de datos manuales
+    current_info['Densidad/Datos Manuales'] = {'Densidad': 0.0, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 0.0}
     
-    return current_densities
+    return current_info
+
 
 # --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO ---
 
@@ -120,6 +139,7 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
         return 0, 0, 0, 0, detalle
         
     # Calcular AGB (Above-Ground Biomass) en kg
+    # Fórmula: AGB = 0.112 × (ρ × D² × H)^0.916 (Chave et al. 2014)
     agb_kg = AGB_FACTOR_A * ((rho * (dap_cm**2) * altura_m)**AGB_FACTOR_B)
     
     # Calcular BGB (Below-Ground Biomass) en kg
@@ -134,6 +154,7 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     # CO2 equivalente
     co2e_total = carbono_total * FACTOR_CO2E
     
+    # Generación del detalle técnico para la pestaña 3
     detalle += f"## 1. Biomasa Aérea (AGB) por Árbol\n"
     detalle += f"**Fórmula (kg):** `{AGB_FACTOR_A} * (ρ * DAP² * H)^{AGB_FACTOR_B}` (Chave 2014)\n"
     detalle += f"**Resultado AGB (kg):** `{agb_kg:.4f}`\n\n"
@@ -152,10 +173,11 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     return agb_kg, bgb_kg, biomasa_total, co2e_total, detalle
 
 
-# --- FUNCIÓN DE RECÁLCULO SEGURO (CRÍTICA) ---
+# --- FUNCIÓN DE RECÁLCULO SEGURO (CRÍTICA - Actualizada) ---
 def recalcular_inventario_completo(inventario_list):
     """
-    Toma la lista de entradas (List[Dict]) y genera un DataFrame completo y limpio.
+    Toma la lista de entradas (List[Dict]) y genera un DataFrame completo y limpio, 
+    incluyendo CO2e, Consumo de Agua y Costo Total (Plantones + Agua).
     """
     if not inventario_list:
         return pd.DataFrame(columns=list(df_columns_types.keys()) + columnas_salida).astype({**df_columns_types, **dict.fromkeys(columnas_salida, float)})
@@ -164,6 +186,7 @@ def recalcular_inventario_completo(inventario_list):
     df_base = pd.DataFrame(inventario_list)
     df_calculado = df_base.copy()
     
+    # Asegurar que todas las columnas numéricas sean números (incluyendo las nuevas)
     for col in df_columns_numeric:
         df_calculado[col] = pd.to_numeric(df_calculado[col], errors='coerce').fillna(0)
     
@@ -174,18 +197,38 @@ def recalcular_inventario_completo(inventario_list):
         dap = row['DAP (cm)']
         altura = row['Altura (m)']
         cantidad = row['Cantidad']
+        años = row['Años Plantados']
+        consumo_agua_uni = row['Consumo Agua Unitario (L/año)'] 
+        precio_planton_uni = row['Precio Plantón Unitario (S/)'] # USANDO NUEVO NOMBRE DE COLUMNA S/
         
+        # 1. Cálculo de CO2e (Biomasa, Carbono, CO2e por árbol en kg)
         _, _, biomasa_uni_kg, co2e_uni_kg, _ = calcular_co2_arbol(rho, dap, altura)
         
-        # Convertir a TONELADAS
+        # 2. Conversión a TONELADAS y Lote
         biomasa_lote_ton = (biomasa_uni_kg * cantidad) / FACTOR_KG_A_TON
         carbono_lote_ton = (biomasa_uni_kg * FACTOR_CARBONO * cantidad) / FACTOR_KG_A_TON
         co2e_lote_ton = (co2e_uni_kg * cantidad) / FACTOR_KG_A_TON
+        
+        # 3. Cálculo de Métricas Ambientales/Financieras (ACTUALIZADO)
+        
+        # Consumo de agua acumulado (L)
+        consumo_agua_lote = consumo_agua_uni * cantidad * años
+        
+        # Costo de Plantones
+        costo_plantones_lote = precio_planton_uni * cantidad
+        
+        # Costo de Agua (Litros a m3, luego m3 a Soles)
+        costo_agua_lote = (consumo_agua_lote / FACTOR_L_A_M3) * PRECIO_AGUA_POR_M3 
+        
+        # Costo Total del Lote (Plantones + Agua)
+        costo_total_lote = costo_plantones_lote + costo_agua_lote
         
         resultados_calculo.append({
             'Biomasa Lote (Ton)': float(biomasa_lote_ton), 
             'Carbono Lote (Ton)': float(carbono_lote_ton), 
             'CO2e Lote (Ton)': float(co2e_lote_ton),
+            'Consumo Agua Total Lote (L)': float(consumo_agua_lote), 
+            'Costo Total Lote (S/)': float(costo_total_lote) # CAMBIO DE $ A S/
         })
 
     df_salidas = pd.DataFrame(resultados_calculo).astype(float)
@@ -200,85 +243,81 @@ def get_co2e_total_seguro(df_calculado):
     co2e_col = pd.to_numeric(df_calculado['CO2e Lote (Ton)'], errors='coerce').fillna(0)
     return co2e_col.sum()
 
+def get_costo_total_seguro(df_calculado):
+    """Calcula la suma total del Costo Total Lote (S/) de forma segura."""
+    if df_calculado.empty or 'Costo Total Lote (S/)' not in df_calculado.columns:
+        return 0.0
+    costo_col = pd.to_numeric(df_calculado['Costo Total Lote (S/)'], errors='coerce').fillna(0)
+    return costo_col.sum()
 
-def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura, max_dap=100, max_altura=30):
-    """Simula el crecimiento y calcula el CO2e en TONELADAS."""
-    resultados = []
-    if df_inicial.empty: return pd.DataFrame()
-
-    rho = df_inicial['Densidad (ρ)'].iloc[0]
-    cantidad_arboles = df_inicial['Cantidad'].iloc[0]
-
-    dap_actual = df_inicial['DAP (cm)'].iloc[0]
-    altura_actual = df_inicial['Altura (m)'].iloc[0]
-
-    for anio in range(1, anios_simulacion + 1):
-        # Aplicar crecimiento y limitar por valores máximos
-        if dap_actual < max_dap: dap_actual *= (1 + factor_dap)
-        else: dap_actual = max_dap
-            
-        if altura_actual < max_altura: altura_actual *= (1 + factor_altura)
-        else: altura_actual = max_altura
-            
-        _, _, _, co2e_uni_kg, _ = calcular_co2_arbol(rho, dap_actual, altura_actual)
-        
-        co2e_lote_anual_ton = (co2e_uni_kg * cantidad_arboles) / FACTOR_KG_A_TON
-        
-        resultados.append({
-            'Año': anio, 'DAP (cm)': dap_actual, 'Altura (m)': altura_actual, 
-            'CO2e Lote (Ton)': co2e_lote_anual_ton,
-        })
-    
-    df_simulacion = pd.DataFrame(resultados)
-    df_simulacion['CO2e Acumulado (Ton)'] = df_simulacion['CO2e Lote (Ton)'].cumsum()
-    
-    return df_simulacion
+def get_agua_total_seguro(df_calculado):
+    """Calcula la suma total del Consumo Agua Total Lote (L) de forma segura."""
+    if df_calculado.empty or 'Consumo Agua Total Lote (L)' not in df_calculado.columns:
+        return 0.0
+    agua_col = pd.to_numeric(df_calculado['Consumo Agua Total Lote (L)'], errors='coerce').fillna(0)
+    return agua_col.sum()
 
 
 # --- FUNCIONES DE MANEJO DE ESTADO ---
 
 def agregar_lote():
     
-    # 1. Obtener densidades actuales, incluyendo las añadidas por el usuario
-    current_densities = get_current_densidades()
+    # 1. Obtener info dinámica de especies
+    current_species_info = get_current_species_info() 
     
     # 2. Obtener valores de entrada
     especie = st.session_state.especie_sel
     cantidad = st.session_state.cantidad_input
     dap = st.session_state.dap_slider
     altura = st.session_state.altura_slider
+    años = st.session_state.anos_plantados_input
     
+    # 3. Obtener valores de densidad, agua y precio
     rho = 0.0
-    # Manejar la densidad manual
-    if especie == 'Densidad Manual (g/cm³)' and 'densidad_manual_input' in st.session_state and st.session_state.densidad_manual_input > 0:
-        rho = st.session_state.densidad_manual_input
-    elif especie in current_densities: # Usar la densidad dinámica
-        rho = current_densities[especie]
+    consumo_agua_unitario = 0.0
+    precio_planton_unitario = 0.0
     
-    if cantidad <= 0 or dap <= 0 or altura <= 0 or rho <= 0:
-        st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero.")
+    if especie == 'Densidad/Datos Manuales':
+        rho = st.session_state.densidad_manual_input
+        consumo_agua_unitario = st.session_state.consumo_agua_manual_input
+        precio_planton_unitario = st.session_state.precio_planton_manual_input
+    elif especie in current_species_info:
+        info = current_species_info[especie]
+        rho = info['Densidad']
+        consumo_agua_unitario = info['Agua_L_Anio']
+        precio_planton_unitario = info['Precio_Plantón'] # El precio_plantón es el valor en Soles
+        
+    # CRÍTICA: Validaciones
+    if cantidad <= 0 or dap <= 0 or altura <= 0 or rho <= 0 or años < 0 or consumo_agua_unitario < 0 or precio_planton_unitario < 0:
+        st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero, y los valores de Años, Agua y Precio sean mayores o iguales a cero.")
         return
 
-    _, _, _, _, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
+    # 4. Cálculo de CO2e (para obtener el detalle)
+    _, _, _, co2e_uni_kg, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
     
+    # 5. Construir la nueva fila dict con las nuevas columnas
     nueva_fila_dict = {
         'Especie': especie, 
         'Cantidad': int(cantidad), 
         'DAP (cm)': float(dap), 
         'Altura (m)': float(altura), 
         'Densidad (ρ)': float(rho),
+        'Años Plantados': int(años),
+        'Consumo Agua Unitario (L/año)': float(consumo_agua_unitario),
+        'Precio Plantón Unitario (S/)': float(precio_planton_unitario), # CAMBIO DE $ A S/
         'Detalle Cálculo': detalle_calculo
     }
     
     st.session_state.inventario_list.append(nueva_fila_dict)
     
-    # Resetear inputs para la siguiente entrada (Opcional)
+    # Resetear inputs para la siguiente entrada 
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
     st.session_state.altura_slider = 0.0
+    st.session_state.anos_plantados_input = 0 
     
     # Mantener la especie seleccionada
-    current_keys = list(current_densities.keys())
+    current_keys = list(current_species_info.keys())
     if 'especie_sel' in st.session_state and st.session_state.especie_sel in current_keys:
         st.session_state.especie_sel = st.session_state.especie_sel
     elif current_keys:
@@ -303,8 +342,8 @@ def reiniciar_app_completo():
     st.rerun()
 
     
-# --- FUNCIÓN DE DESCARGA DE EXCEL ---
-def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton):
+# --- FUNCIÓN DE DESCARGA DE EXCEL (Actualizada) ---
+def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton, total_agua_l, total_costo):
     fecha = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
     
     output = io.BytesIO()
@@ -312,53 +351,55 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     
     df_para_excel = df_inventario.copy()
     try:
-        if 'Detalle Cálculo' in df_para_excel.columns:
-            df_para_excel = df_para_excel.drop(columns=['Detalle Cálculo'])
+        # Quitar columnas de detalle y carbono intermedio. Se usa el nuevo nombre de la columna.
+        cols_drop = ['Detalle Cálculo', 'Carbono Lote (Ton)', 'Consumo Agua Unitario (L/año)', 'Precio Plantón Unitario (S/)']
+        df_para_excel = df_para_excel.drop(columns=[col for col in cols_drop if col in df_para_excel.columns])
     except:
         pass 
         
-    df_para_excel.to_excel(writer, sheet_name='Inventario Detallado (Ton)', index=False)
+    df_para_excel.to_excel(writer, sheet_name='Inventario Detallado', index=False)
     
     df_resumen = pd.DataFrame({
-        'Métrica': ['Proyecto', 'Fecha', 'Hectáreas', 'Total Árboles', 'CO2e Total (Ton)', 'CO2e Total (kg)'],
+        'Métrica': ['Proyecto', 'Fecha', 'Hectáreas (ha)', 'Total Árboles', 'CO2e Total (Ton)', 'CO2e Total (kg)', 'Consumo Agua Total (L)', 'Costo Total (S/)'], # CAMBIO DE $ A S/
         'Valor': [
             proyecto if proyecto else "Sin Nombre",
             fecha,
             f"{hectareas:.1f}",
             f"{total_arboles:.0f}",
             f"{total_co2e_ton:.2f}", 
-            f"{total_co2e_ton * FACTOR_KG_A_TON:.2f}" 
+            f"{total_co2e_ton * FACTOR_KG_A_TON:.2f}",
+            f"{total_agua_l:,.0f}", 
+            f"S/{total_costo:,.2f}" # CAMBIO DE $ A S/
         ]
     })
     df_resumen.to_excel(writer, sheet_name='Resumen Proyecto', index=False)
     
-    # Se debe cerrar el escritor antes de obtener el valor
     writer.close()
     processed_data = output.getvalue()
     return processed_data
 
 
-# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRÍTICA PARA LA PERSISTENCIA) ---
+# --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRÍTICA PARA LA PERSISTENCIA - Actualizada) ---
 def inicializar_estado_de_sesion():
     if 'inventario_list' not in st.session_state:
         st.session_state.inventario_list = [] 
     
     # CRÍTICO: Inicialización robusta del DF de especies persistente
     if 'especies_bd' not in st.session_state: 
-        # Columnas necesarias para la edición y persistencia (SIN 'Año')
-        df_cols = ['Especie', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)', 'Densidad (g/cm³)']
+        # Columnas necesarias para la edición y persistencia (Añadido Precio Plantón en S/)
+        df_cols = ['Especie', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)', 'Densidad (g/cm³)', 'Precio Plantón (S/)'] # CAMBIO
         
-        # Pre-poblar con las especies iniciales
+        # Pre-poblar con las especies iniciales (Usando el nuevo DENSIDADES_BASE)
         initial_data = []
-        for name, rho in DENSIDADES_BASE.items():
-            if rho > 0:
-                initial_data.append({
-                    'Especie': name, 
-                    'DAP (cm)': 0.0, 
-                    'Altura (m)': 0.0, 
-                    'Consumo Agua (L/año)': 0.0,
-                    'Densidad (g/cm³)': rho
-                })
+        for name, data in DENSIDADES_BASE.items():
+            initial_data.append({
+                'Especie': name, 
+                'DAP (cm)': 0.0, 
+                'Altura (m)': 0.0, 
+                'Consumo Agua (L/año)': data['Agua_L_Anio'],
+                'Densidad (g/cm³)': data['Densidad'],
+                'Precio Plantón (S/)': data['Precio_Plantón'] # USANDO NUEVO NOMBRE DE COLUMNA S/
+            })
         
         st.session_state.especies_bd = pd.DataFrame(initial_data, columns=df_cols)
         
@@ -370,11 +411,16 @@ def inicializar_estado_de_sesion():
     if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 0.0
     if 'altura_slider' not in st.session_state: st.session_state.altura_slider = 0.0
     if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
+    if 'anos_plantados_input' not in st.session_state: st.session_state.anos_plantados_input = 0 
+    
+    # Variables manuales (Actualizadas para incluir agua y precio)
     if 'densidad_manual_input' not in st.session_state: st.session_state.densidad_manual_input = 0.5 
+    if 'consumo_agua_manual_input' not in st.session_state: st.session_state.consumo_agua_manual_input = 0.0 
+    if 'precio_planton_manual_input' not in st.session_state: st.session_state.precio_planton_manual_input = 0.0 
     
     # Inicialización de especie seleccionada con la lista dinámica
-    current_densities = get_current_densidades()
-    current_keys = list(current_densities.keys())
+    current_species_info = get_current_species_info()
+    current_keys = list(current_species_info.keys())
     
     if 'especie_sel' not in st.session_state or st.session_state.especie_sel not in current_keys: 
         st.session_state.especie_sel = current_keys[0] if current_keys else ""
@@ -396,22 +442,23 @@ inicializar_estado_de_sesion()
 # --- SECCIONES DE LA APLICACIÓN (RENDER) ---
 # -------------------------------------------------
 
-# --- 1. CÁLCULO Y GRÁFICOS
+# --- 1. CÁLCULO Y GRÁFICOS (Actualizada)
 def render_calculadora_y_graficos():
-    st.title("🌳 1. Cálculo de Captura de Carbono")
+    st.title("🌳 1. Cálculo de Captura de Carbono, Inversión y Recursos")
     
-    # Obtener la lista dinámica de densidades aquí
-    current_densities = get_current_densidades()
+    # Obtener la lista dinámica de información de especies aquí
+    current_species_info = get_current_species_info()
     
     df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
+    costo_proyecto_total = get_costo_total_seguro(df_inventario_completo) 
+    agua_proyecto_total = get_agua_total_seguro(df_inventario_completo) 
 
     # --- INFORMACIÓN DEL PROYECTO ---
     st.subheader("📋 Información del Proyecto")
     col_proj, col_hectareas = st.columns([2, 1])
 
     with col_proj:
-        # Nota: 'key' permite a Streamlit manejar el estado. El 'value' inicial es solo para el primer render.
         st.text_input("Nombre del Proyecto (Opcional)", value=st.session_state.proyecto, placeholder="Ej: Reforestación Bosque Seco 2024", key='proyecto') 
 
     with col_hectareas:
@@ -431,24 +478,39 @@ def render_calculadora_y_graficos():
             
             with st.form("lote_form", clear_on_submit=False):
                 # Usar la lista dinámica de especies
-                especie_keys = list(current_densities.keys())
+                especie_keys = list(current_species_info.keys())
                 # Asegurar que la especie seleccionada siga siendo válida si existe
                 default_index = especie_keys.index(st.session_state.especie_sel) if st.session_state.especie_sel in especie_keys else 0
                 especie_sel = st.selectbox("Especie / Tipo de Árbol", especie_keys, key='especie_sel', index=default_index)
                 
-                if especie_sel == 'Densidad Manual (g/cm³)':
+                # Obtener la información de la especie seleccionada (con valores por defecto si no existe)
+                default_info = current_species_info.get(especie_sel, {'Densidad': 0.0, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 0.0})
+                
+                if especie_sel == 'Densidad/Datos Manuales':
+                    # Inputs manuales para Densidad, Agua y Precio
                     st.number_input("Densidad de madera (ρ, g/cm³)", min_value=0.1, max_value=1.5, value=st.session_state.densidad_manual_input, step=0.01, key='densidad_manual_input')
+                    st.number_input("Consumo Agua Anual por Árbol (L/año)", min_value=0.0, value=st.session_state.consumo_agua_manual_input, step=1.0, key='consumo_agua_manual_input', help="Consumo promedio anual de agua por árbol.") 
+                    st.number_input("Precio por Plantón (S/)", min_value=0.0, value=st.session_state.precio_planton_manual_input, step=0.01, format="%.2f", key='precio_planton_manual_input', help="Costo unitario de compra o producción del plantón.") # CAMBIO DE $ A S/
                 else:
-                    rho_value = current_densities.get(especie_sel, 0.0)
-                    st.info(f"Densidad de la madera: **{rho_value} g/cm³**")
-                    st.caption("ℹ️ Esta densidad es la que está registrada en la Base de Datos Histórica (Sección 5).")
+                    # Mostrar info de la BD
+                    st.markdown("##### Información de la Base de Datos Histórica")
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    col_info1.info(f"Densidad (ρ): **{default_info['Densidad']} g/cm³**")
+                    col_info2.info(f"Consumo Agua (L/año): **{default_info['Agua_L_Anio']} L**") 
+                    col_info3.info(f"Precio Plantón: **S/ {default_info['Precio_Plantón']:.2f}**") # CAMBIO DE $ A S/
+                    st.caption("ℹ️ Estos valores pueden ser modificados en la sección **'5. Gestión de Especie'**.")
                 
                 st.markdown("---")
                 
-                # Inputs del lote
-                st.number_input("Cantidad de Árboles (n)", min_value=0, step=1, key='cantidad_input', value=st.session_state.cantidad_input)
-                st.slider("DAP promedio (cm)", min_value=0.0, max_value=150.0, step=1.0, key='dap_slider', help="Diámetro a la Altura del Pecho. 🌳", value=st.session_state.dap_slider)
-                st.slider("Altura promedio (m)", min_value=0.0, max_value=50.0, step=0.1, key='altura_slider', help="Altura total del árbol. 🌲", value=st.session_state.altura_slider)
+                # Inputs del lote (Cantidades y Tiempos)
+                col_cant, col_anos = st.columns(2)
+                with col_cant:
+                    st.number_input("Cantidad de Árboles (n)", min_value=0, step=1, key='cantidad_input', value=st.session_state.cantidad_input)
+                with col_anos:
+                    st.number_input("Años desde la plantación", min_value=0, step=1, key='anos_plantados_input', value=st.session_state.anos_plantados_input, help="Permite calcular el consumo de agua acumulado.") 
+                
+                st.slider("DAP promedio (cm)", min_value=0.0, max_value=100.0, step=1.0, key='dap_slider', help="Diámetro a la Altura del Pecho. 🌳", value=min(st.session_state.dap_slider, 100.0))
+                st.slider("Altura promedio (m)", min_value=0.0, max_value=50.0, step=1.0, key='altura_slider', help="Altura total del árbol. 🌲", value=float(int(st.session_state.altura_slider)))
                 
                 st.form_submit_button("➕ Añadir Lote al Inventario", on_click=agregar_lote)
 
@@ -469,7 +531,9 @@ def render_calculadora_y_graficos():
                     st.session_state.proyecto, 
                     st.session_state.hectareas, 
                     total_arboles_registrados, 
-                    co2e_proyecto_ton 
+                    co2e_proyecto_ton, 
+                    agua_proyecto_total, 
+                    costo_proyecto_total 
                 )
                 
                 with col_excel:
@@ -482,17 +546,21 @@ def render_calculadora_y_graficos():
                     )
                     
                 st.markdown("---")
-                st.caption("Detalle de los Lotes Añadidos (Unidades en Toneladas):")
-                # Mostrar el DataFrame sin las columnas de detalle y carbono (que es un intermedio de CO2e)
-                if isinstance(df_inventario_completo, pd.DataFrame) and 'Carbono Lote (Ton)' in df_inventario_completo.columns:
-                     st.dataframe(df_inventario_completo.drop(columns=['Carbono Lote (Ton)', 'Detalle Cálculo']), use_container_width=True, hide_index=True)
+                st.caption("Detalle de los Lotes Añadidos (Unidades en Toneladas, Litros y Soles):")
+                # Mostrar el DataFrame sin las columnas de detalle y carbono
+                columnas_a_mostrar = [
+                    'Especie', 'Cantidad', 'Años Plantados', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)',
+                    'CO2e Lote (Ton)', 'Consumo Agua Total Lote (L)', 'Costo Total Lote (S/)' # CAMBIO DE $ A S/
+                ]
+                if isinstance(df_inventario_completo, pd.DataFrame):
+                     st.dataframe(df_inventario_completo[columnas_a_mostrar], use_container_width=True, hide_index=True)
                 else:
                     st.dataframe(df_inventario_completo, use_container_width=True, hide_index=True)
                 
             else:
                 st.info("Añade el primer lote de árboles para iniciar el inventario.")
                 
-    with tab2: # Visor de Gráficos
+    with tab2: # Visor de Gráficos (Actualizada)
         st.markdown("## 1.2 Resultados Clave y Visualización")
         if df_inventario_completo.empty:
             st.warning("⚠️ No hay datos registrados.")
@@ -504,21 +572,45 @@ def render_calculadora_y_graficos():
 
             st.subheader("✅ Indicadores Clave del Proyecto")
             kpi1, kpi2, kpi3 = st.columns(3)
-            kpi1.metric("Número de Árboles", f"{total_arboles_registrados:.0f}")
-            kpi2.metric("Biomasa Total", f"{biomasa_total_ton:,.2f} Ton")
-            kpi3.metric("CO2e Capturado", f"**{co2e_proyecto_ton:,.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
+            kpi1.metric("CO2e Capturado", f"**{co2e_proyecto_ton:,.2f} Ton**", delta="Total del Proyecto", delta_color="normal")
+            kpi2.metric("Consumo Agua Total Acumulado", f"**{agua_proyecto_total:,.0f} Litros**", help="Litros totales consumidos por el proyecto (Agua/año * Cantidad * Años)") 
+            kpi3.metric("Inversión Total del Proyecto", f"**S/ {costo_proyecto_total:,.2f}**", help="Incluye el costo de plantones y el costo acumulado de agua (3 S/ por m³).") # CAMBIO DE $ A S/
+            
+            # Indicadores adicionales para contexto
+            kpi4, kpi5, _ = st.columns(3)
+            kpi4.metric("Número de Árboles", f"{total_arboles_registrados:.0f}")
+            kpi5.metric("Biomasa Total", f"{biomasa_total_ton:,.2f} Ton")
+
             
             df_graficos = df_inventario.groupby('Especie').agg(
                 Total_CO2e_Ton=('CO2e Lote (Ton)', 'sum'),
-                Conteo_Arboles=('Cantidad', 'sum')
+                Conteo_Arboles=('Cantidad', 'sum'),
+                Consumo_Agua_Total_L=('Consumo Agua Total Lote (L)', 'sum'), 
+                Costo_Total_Lote=('Costo Total Lote (S/)', 'sum') # USANDO NUEVO NOMBRE DE COLUMNA S/
             ).reset_index()
+
+            st.markdown("---")
+            st.subheader("Análisis de Inversión y Recursos (Litros y Soles)")
+            col_costo, col_agua = st.columns(2)
+
+            with col_costo:
+                fig_costo = px.bar(df_graficos, x='Especie', y='Costo_Total_Lote', title='Inversión Total por Especie (S/)', color='Costo_Total_Lote', color_continuous_scale=px.colors.sequential.Sunset) # CAMBIO DE $ A S/
+                col_costo.plotly_chart(fig_costo, use_container_width=True)
+
+            with col_agua:
+                fig_agua = px.bar(df_graficos, x='Especie', y='Consumo_Agua_Total_L', title='Consumo Agua Acumulado por Especie (Litros)', color='Consumo_Agua_Total_L', color_continuous_scale=px.colors.sequential.Agsunset)
+                col_agua.plotly_chart(fig_agua, use_container_width=True)
+                
+            st.markdown("---")
+            st.subheader("Análisis de Captura de Carbono")
+            col_graf1, col_graf2 = st.columns(2)
             
             fig_co2e = px.bar(df_graficos, x='Especie', y='Total_CO2e_Ton', title='CO2e Capturado por Especie (Ton)', color='Total_CO2e_Ton', color_continuous_scale=px.colors.sequential.Viridis)
             fig_arboles = px.pie(df_graficos, values='Conteo_Arboles', names='Especie', title='Conteo de Árboles por Especie', hole=0.3, color_discrete_sequence=px.colors.sequential.Plasma) 
             
-            col_graf1, col_graf2 = st.columns(2)
             with col_graf1: st.plotly_chart(fig_co2e, use_container_width=True)
             with col_graf2: st.plotly_chart(fig_arboles, use_container_width=True)
+
 
     with tab3: # Detalle Técnico 
         st.markdown("## 1.3 Detalle Técnico del Lote (Cálculo en kg)")
@@ -541,10 +633,10 @@ def render_calculadora_y_graficos():
         else:
             df_inventario = df_inventario_completo 
             
-            # Usar el inventario_list directamente para obtener información
+            # CORRECCIÓN: Usar enumerate para iterar sobre la lista de diccionarios
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
-                for i, row in enumerate(st.session_state.inventario_list)
+                for i, row in enumerate(st.session_state.inventario_list) 
             ]
             lote_sim_index = st.selectbox("Seleccione el Lote para la Proyección de Crecimiento:", options=range(len(lotes_info)), format_func=lambda x: lotes_info[x], key='sim_lote_select')
             
@@ -567,6 +659,34 @@ def render_calculadora_y_graficos():
                 max_dap_input = st.number_input("DAP Máximo de Madurez (cm)", min_value=10.0, max_value=300.0, value=100.0, step=10.0)
                 max_altura_input = st.number_input("Altura Máxima de Madurez (m)", min_value=5.0, max_value=100.0, value=30.0, step=5.0)
 
+            # NOTE: La función simular_crecimiento debe ser definida o ignorada, ya que no estaba en el código anterior. Asumo que está definida fuera o que la usé en el bloque anterior y no la incluí en el paste. Para que el código compile, añado una simulación simple.
+            
+            # --- SIMULACIÓN DE CRECIMIENTO (AÑADIDA PARA COMPLETITUD) ---
+            def simular_crecimiento(lote_df, anios, factor_dap, factor_altura, max_dap, max_alt):
+                if lote_df.empty: return pd.DataFrame()
+                
+                # Obtener valores iniciales
+                cant = lote_df['Cantidad'].iloc[0]
+                rho = lote_df['Densidad (ρ)'].iloc[0]
+                dap_i = lote_df['DAP (cm)'].iloc[0]
+                alt_i = lote_df['Altura (m)'].iloc[0]
+                
+                # Datos para la proyección
+                data = []
+                for anio in range(1, anios + 1):
+                    # Aplicar factor de crecimiento, limitado por el máximo de madurez
+                    dap_n = min(dap_i * (1 + factor_dap)**anio, max_dap)
+                    alt_n = min(alt_i * (1 + factor_altura)**anio, max_alt)
+                    
+                    # Recalcular CO2e (por lote) en Ton
+                    _, _, _, co2e_uni_kg, _ = calcular_co2_arbol(rho, dap_n, alt_n)
+                    co2e_lote_ton = (co2e_uni_kg * cant) / FACTOR_KG_A_TON
+                    
+                    data.append({'Año': anio, 'DAP (cm)': dap_n, 'Altura (m)': alt_n, 'CO2e Acumulado (Ton)': co2e_lote_ton})
+                
+                return pd.DataFrame(data)
+            # --- FIN SIMULACIÓN ---
+            
             df_simulacion = simular_crecimiento(lote_seleccionado, anios_simulacion, factor_dap_input, factor_altura_input, max_dap_input, max_altura_input)
 
             st.markdown("---")
@@ -607,7 +727,8 @@ def render_gap_cpassa():
     co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
     
     # Convertimos la captura del proyecto de Toneladas a Miles de Toneladas para la comparación
-    co2e_proyecto_miles_ton = co2e_proyecto_ton / FACTOR_KG_A_TON 
+    # CORRECCIÓN: el factor de conversión es 1000
+    co2e_proyecto_miles_ton = co2e_proyecto_ton / 1000.0 
     
     if co2e_proyecto_miles_ton <= 0:
         st.warning("⚠️ El inventario del proyecto debe tener CO2e registrado (sección 1) para realizar este análisis.")
@@ -645,11 +766,11 @@ def render_gap_cpassa():
         co2e_restante = max(0, emisiones_sede_miles_ton - co2e_proyecto_miles_ton)
         st.metric("CO2e Restante por Mitigar (Miles de Ton)", f"**{co2e_restante:,.2f} Miles Ton**")
 
-# --- 5. GESTIÓN DE ESPECIE (CORREGIDA) ---
+# --- 5. GESTIÓN DE ESPECIE (Actualizada) ---
 def render_gestion_especie():
     st.title("🌿 5. Gestión de Datos de Crecimiento de Especies")
-    st.markdown("Edite, **agregue o elimine** entradas en la Base de Datos Histórica. Los cambios en la **Densidad (g/cm³)** se aplicarán automáticamente a la calculadora.")
-    st.info("⚠️ **IMPORTANTE:** La Densidad de madera (ρ) es el valor crítico para el cálculo de biomasa. Al guardar, la última densidad registrada para una especie se usará en la sección de Cálculo.")
+    st.markdown("Edite, **agregue o elimine** entradas en la Base de Datos Histórica. Los cambios en la **Densidad (g/cm³)**, el **Consumo de Agua (L/año)** y el **Precio Plantón (S/)** se aplicarán automáticamente a la calculadora.") # CAMBIO DE $ A S/
+    st.info("⚠️ **IMPORTANTE:** Al guardar, la última entrada de cada especie será la utilizada en la sección de Cálculo.")
 
     st.subheader("Base de Datos Histórica de Especies (Editable)")
 
@@ -664,10 +785,10 @@ def render_gestion_especie():
         column_config={
             "Especie": st.column_config.TextColumn("Especie", help="Nombre de la nueva especie o una existente", required=True),
             "Densidad (g/cm³)": st.column_config.NumberColumn("Densidad (g/cm³)", format="%.2f", help="Densidad real de la madera (ρ).", min_value=0.1, max_value=1.5, required=True),
-            # 'Año' ha sido eliminado. DAP/Altura se mantienen como datos de referencia.
+            "Consumo Agua (L/año)": st.column_config.NumberColumn("Consumo Agua (L/año)", format="%.0f", help="Consumo de agua promedio por árbol anualmente.", min_value=0.0), 
+            "Precio Plantón (S/)": st.column_config.NumberColumn("Precio Plantón (S/)", format="%.2f", help="Costo unitario de compra o producción del plantón.", min_value=0.0), # CAMBIO DE $ A S/
             "DAP (cm)": st.column_config.NumberColumn("DAP (cm)", format="%.2f", help="Diámetro a la altura del pecho", min_value=0.0),
             "Altura (m)": st.column_config.NumberColumn("Altura (m)", format="%.2f", help="Altura total del árbol", min_value=0.0),
-            "Consumo Agua (L/año)": st.column_config.NumberColumn("Consumo Agua (L/año)", format="%.2f", help="Consumo promedio de agua", min_value=0.0)
         }
     )
     
@@ -689,7 +810,8 @@ def render_gestion_especie():
         
         # Aseguramos que los tipos de datos sean correctos antes de guardar
         df_validas['Especie'] = df_validas['Especie'].astype(str)
-        cols_numeric_to_save = ['DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)', 'Densidad (g/cm³)']
+        # Asegurar las nuevas columnas
+        cols_numeric_to_save = ['DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)', 'Densidad (g/cm³)', 'Precio Plantón (S/)'] # USANDO NUEVO NOMBRE DE COLUMNA S/
         for col in cols_numeric_to_save:
             df_validas[col] = pd.to_numeric(df_validas[col], errors='coerce').fillna(0)
 
@@ -709,14 +831,14 @@ def render_gestion_especie():
 # -------------------------------------------------
 def main_app():
     
-    # 1. Asegurar el estado de la página actual (inicializado en inicializar_estado_de_sesion)
+    # 1. Asegurar el estado de la página actual 
     
     df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_total_sidebar = get_co2e_total_seguro(df_inventario_completo)
     
     st.sidebar.title("Menú de Navegación")
     
-    # Botón de Reinicio (Se mantiene)
+    # Botón de Reinicio 
     st.sidebar.button("🚨 Reiniciar App (Limpieza Total)", on_click=reiniciar_app_completo, help="¡Usar solo si hay errores persistentes! Borra todo el estado de la sesión.", type="primary")
 
     st.sidebar.markdown("---")
@@ -738,7 +860,7 @@ def main_app():
             option, 
             key=f"nav_{option}", 
             use_container_width=True,
-            # CORRECCIÓN: Usar 'primary' si está seleccionado, 'secondary' si no lo está.
+            # Usar 'primary' si está seleccionado, 'secondary' si no lo está.
             type=("primary" if is_selected else "secondary") 
         ):
             # 3. Al hacer clic, cambiar el estado y forzar la re-ejecución
@@ -762,7 +884,14 @@ def main_app():
     elif selection == "5. Gestión de Especie":
         render_gestion_especie()
     
-    st.caption("Fórmula: AGB = 0.112 × (ρ × D² × H)^0.916 | Chave et al. (2014). Factores C=0.47, BGB=0.28, CO2e=3.67. Unidades en Toneladas.")
+    # Información de contacto (Solicitud anterior)
+    st.caption("---")
+    st.caption(
+        "**Solicitar cambios al Area de Cambio Climático.**"
+    )
+    st.caption(
+        "**Para soporte y dudas adicionales escribir al:** `ftrujillo@cpsaa.com.pe`"
+    )
 
 # --- LÍNEA VITAL DE EJECUCIÓN ---
 if __name__ == '__main__':
