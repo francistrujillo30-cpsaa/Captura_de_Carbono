@@ -44,18 +44,35 @@ FACTORES_CRECIMIENTO = {
 
 # HUELLA DE CARBONO CORPORATIVA POR SEDE (EN MILES DE tCO2e)
 HUELLA_CORPORATIVA = {
-    "Planta Pacasmayo": 1265.15,      
-    "Planta Piura": 595.76,          
-    "Oficina Lima": 0.613,           
-    "Cantera Tembladera": 0.361,     
-    "Planta Rioja": 264.63,          
-    "DINO Cajamarca": 2.193,         
-    "DINO Chiclayo": 3.293,          
-    "DINO Chimbote": 1.708,          
-    "DINO Moche": 3.336,             
-    "DINO Piura": 1.004,             
+    # CEMENTOS PACASMAYO S.A.A.
+    "Planta Pacasmayo": 1265.15,
+    "Planta Piura": 595.76,
+    "Oficina Lima": 0.613,
+    "Cantera Tembladera": 0.361,
+    "Cantera Cerro Pintura": 0.425,
+    "Cantera Virrilá": 0.433,
+    "Cantera Bayóvar 4": 0.029,
+    "Cantera Bayóvar 9": 0.041,
+    "Almacén Salaverry": 0.0038,
+    "Almacén Piura": 0.0053,
+    
+    # CEMENTOS SELVA S.A.C.
+    "Planta Rioja": 264.63,
+    "Cantera Tioyacu": 0.198,
+    
+    # DINO S.R.L.
+    "DINO Cajamarca": 2.193,
+    "DINO Chiclayo": 3.293,
+    "DINO Chimbote": 1.708,
+    "DINO Moche": 3.336,
+    "DINO Piura": 1.004,
+    "DINO Pacasmayo": 1.188,
+    "DINO Trujillo": 1.954,
+    "DINO Almacén Paita": 0.0074,
+    
+    # DISAC
+    "DISAC Tarapoto": 0.708
 }
-
 
 # --- DEFINICIÓN DE TIPOS DE COLUMNAS (Incluye Lat/Lon solo para el DF interno, no para la exportación/visualización) ---
 df_columns_types = {
