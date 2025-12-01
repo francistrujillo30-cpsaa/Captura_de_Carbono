@@ -18,7 +18,7 @@ AGB_FACTOR_A = 0.112
 AGB_FACTOR_B = 0.916
 FACTOR_KG_A_TON = 1000 # Constante para conversión
 
-# BASE DE DATOS INICIAL DE DENSIDADES
+# BASE DE DATOS INICIAL DE DENSIDADES (Valores por defecto)
 DENSIDADES = {
     'Eucalipto (E. globulus)': 0.76, 'Cedro (C. odorata)': 0.48, 'Caoba (S. macrophylla)': 0.54,
     'Pino (P. patula)': 0.43, 'Ficus (F. benghalensis)': 0.50, 'Palmera (varias)': 0.35,
@@ -26,7 +26,7 @@ DENSIDADES = {
     'Palmera hawaii': 0.35, 'Hibiscus tiliaceus (Majao)': 0.65, 'Densidad Manual (g/cm³)': 0.0
 }
 
-# FACTORES DE CRECIMIENTO INICIAL
+# FACTORES DE CRECIMIENTO INICIAL (Valores por defecto)
 FACTORES_CRECIMIENTO = {
     'Eucalipto (E. globulus)': {'DAP': 0.15, 'Altura': 0.12, 'Agua': 0.0},
     'Pino (P. patula)': {'DAP': 0.10, 'Altura': 0.08, 'Agua': 0.0},
@@ -34,19 +34,39 @@ FACTORES_CRECIMIENTO = {
     'Factor Manual': {'DAP': 0.05, 'Altura': 0.05, 'Agua': 0.0}
 }
 
-# --- DATOS DE LA HUELLA CORPORATIVA (GAP CPSSA) - VALORES REALES 2024 ---
-EMISIONES_SEDES = {
-    'Planta Pacasmayo': 1265154.79,
-    'Planta Piura': 595763.31,
-    'Oficina Lima': 612.81,
-    'Cantera Virrilá': 432.69,
-    'Cantera Tembladera': 361.15,
-    'Planta Rioja (Cementos Selva)': 264627.26,
-    'DINO Piura': 3939.77,
-    'DINO Moche': 3336.06,
-    'DINO Trujillo': 1954.46,
-    'DISAC Tarapoto': 708.38
+# HUELLA DE CARBONO CORPORATIVA POR SEDE (EN MILES DE tCO2e) - CORRECCIÓN APLICADA
+# Fuente: Informe Final Huella de Carbono Corporativa 2024
+HUELLA_CORPORATIVA = {
+    # CEMENTOS PACASMAYO S.A.A.
+    "Planta Pacasmayo": 1265.15,      # 1,265,154.79 tCO2e
+    "Planta Piura": 595.76,          # 595,763.31 tCO2e
+    "Oficina Lima": 0.613,           # 612.81 tCO2e
+    "Cantera Tembladera": 0.361,     # 361.15 tCO2e
+    "Cantera Cerro Pintura": 0.425,  # 425.43 tCO2e
+    "Cantera Virrilá": 0.433,        # 432.69 tCO2e
+    "Cantera Bayóvar 4": 0.029,      # 29.03 tCO2e
+    "Cantera Bayóvar 9": 0.041,      # 40.66 tCO2e
+    "Almacén Salaverry": 0.0038,     # 3.80 tCO2e
+    "Almacén Piura": 0.0053,         # 5.32 tCO2e
+    
+    # CEMENTOS SELVA S.A.C.
+    "Planta Rioja": 264.63,          # 264,627.26 tCO2e
+    "Cantera Tioyacu": 0.198,        # 197.94 tCO2e
+    
+    # DINO S.R.L.
+    "DINO Cajamarca": 2.193,         # 2,192.56 tCO2e
+    "DINO Chiclayo": 3.293,          # 3,293.47 tCO2e
+    "DINO Chimbote": 1.708,          # 1,708.21 tCO2e
+    "DINO Moche": 3.336,             # 3,336.06 tCO2e
+    "DINO Piura": 1.004,             # 1,003.88 tCO2e
+    "DINO Pacasmayo": 1.188,         # 1,188.45 tCO2e
+    "DINO Trujillo": 1.954,          # 1,954.46 tCO2e
+    "DINO Almacén Paita": 0.0074,    # 7.44 tCO2e
+    
+    # DISAC
+    "DISAC Tarapoto": 0.708          # 708.38 tCO2e
 }
+
 
 # --- DEFINICIÓN DE TIPOS DE COLUMNAS (SOLO ENTRADAS) ---
 df_columns_types = {
@@ -57,7 +77,7 @@ df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)']
 columnas_salida = ['Biomasa Lote (Ton)', 'Carbono Lote (Ton)', 'CO2e Lote (Ton)']
 
 
-# --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO ---
+# --- FUNCIONES DE CÁLCULO Y MANEJO DE INVENTARIO (SIN CAMBIOS) ---
 
 def calcular_co2_arbol(rho, dap_cm, altura_m):
     """Calcula la biomasa, carbono y CO2e por árbol en KILOGRAMOS."""
@@ -91,7 +111,7 @@ def recalcular_inventario_completo(inventario_list):
     df_base = pd.DataFrame(inventario_list)
     df_calculado = df_base.copy()
     
-    # 1. Asegurar tipos de entrada (aunque la lista es robusta, este es un paso final de seguridad)
+    # 1. Asegurar tipos de entrada 
     for col in df_columns_numeric:
         df_calculado[col] = pd.to_numeric(df_calculado[col], errors='coerce').fillna(0)
     
@@ -166,7 +186,8 @@ def simular_crecimiento(df_inicial, anios_simulacion, factor_dap, factor_altura,
     return df_simulacion
 
 
-# --- FUNCIÓN AGREGAR LOTE (ULTRA-DEFENSIVA) ---
+# --- FUNCIONES DE MANEJO DE ESTADO (SIN CAMBIOS) ---
+
 def agregar_lote():
     especie = st.session_state.especie_sel
     cantidad = st.session_state.cantidad_input
@@ -183,10 +204,8 @@ def agregar_lote():
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero.")
         return
 
-    # Usamos calcular_co2_arbol para obtener el Detalle Cálculo
     _, _, _, _, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
     
-    # CRÍTICO: Generar la nueva fila SÓLO COMO UN DICCIONARIO PYTHON (sin DataFrame)
     nueva_fila_dict = {
         'Especie': especie, 
         'Cantidad': int(cantidad), 
@@ -196,29 +215,23 @@ def agregar_lote():
         'Detalle Cálculo': detalle_calculo
     }
     
-    # CRÍTICO: Añadir a la lista en el estado de sesión (native Python list)
     st.session_state.inventario_list.append(nueva_fila_dict)
     
-    # Restablecer los valores de entrada a cero después de agregar (opcional, pero buena práctica)
     st.session_state.cantidad_input = 0
     st.session_state.dap_slider = 0.0
     st.session_state.altura_slider = 0.0
-    # Aseguramos que la especie seleccionada se restablezca a la primera opción si la clave existe
     if 'especie_sel' in st.session_state and list(DENSIDADES.keys()):
         st.session_state.especie_sel = list(DENSIDADES.keys())[0]
     
-    # FIX: Usar st.rerun()
     st.rerun() 
     
 def deshacer_ultimo_lote():
     if st.session_state.inventario_list:
-        st.session_state.inventario_list.pop() # Eliminar el último diccionario de la lista
-        # FIX: Usar st.rerun()
+        st.session_state.inventario_list.pop() 
         st.rerun()
 
 def limpiar_inventario():
-    st.session_state.inventario_list = [] # Resetear a lista vacía
-    # FIX: Usar st.rerun()
+    st.session_state.inventario_list = [] 
     st.rerun()
 
 def reiniciar_app_completo():
@@ -226,32 +239,25 @@ def reiniciar_app_completo():
     keys_to_delete = list(st.session_state.keys())
     for key in keys_to_delete:
         del st.session_state[key]
-    # FIX: Usar st.rerun()
     st.rerun()
 
     
-# --- FUNCIÓN DE DESCARGA DE EXCEL (CORREGIDA PARA KEYERROR EN DF VACÍO) ---
+# --- FUNCIÓN DE DESCARGA DE EXCEL (SIN CAMBIOS) ---
 def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton):
-    # Función de descarga modificada para usar los datos actuales del inventario
     fecha = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
     
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    # 1. Hoja de Inventario Detallado (ya en Toneladas)
-    
     df_para_excel = df_inventario.copy()
     try:
-        # Solo intentar eliminar la columna si existe en el DataFrame
         if 'Detalle Cálculo' in df_para_excel.columns:
             df_para_excel = df_para_excel.drop(columns=['Detalle Cálculo'])
     except:
-        # Si falla el drop por alguna razón, usamos el DF tal cual (que estará vacío)
         pass 
         
     df_para_excel.to_excel(writer, sheet_name='Inventario Detallado (Ton)', index=False)
     
-    # 2. Hoja de Resumen
     df_resumen = pd.DataFrame({
         'Métrica': ['Proyecto', 'Fecha', 'Hectáreas', 'Total Árboles', 'CO2e Total (Ton)', 'CO2e Total (kg)'],
         'Valor': [
@@ -272,22 +278,23 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
 
 # --- INICIALIZACIÓN DEL ESTADO DE SESIÓN (CRÍTICA PARA EVITAR KEYERROR) ---
 def inicializar_estado_de_sesion():
-    # CRÍTICO: Inicializar todas las variables necesarias antes de que cualquier widget las use.
     if 'inventario_list' not in st.session_state:
         st.session_state.inventario_list = [] 
     
+    # CRÍTICO: Inicialización robusta del DF de especies persistente
     if 'especies_bd' not in st.session_state: 
+        # Columnas necesarias para la edición y persistencia
         st.session_state.especies_bd = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
         
     # Variables del proyecto
     if 'proyecto' not in st.session_state: st.session_state.proyecto = ""
     if 'hectareas' not in st.session_state: st.session_state.hectareas = 0.0
     
-    # Variables de Inputs (las que causaban el KeyError)
+    # Variables de Inputs 
     if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 0.0
     if 'altura_slider' not in st.session_state: st.session_state.altura_slider = 0.0
     if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 0
-    if 'densidad_manual_input' not in st.session_state: st.session_state.densidad_manual_input = 0.5 # Valor por defecto seguro
+    if 'densidad_manual_input' not in st.session_state: st.session_state.densidad_manual_input = 0.5 
     
     # Inicialización de especie seleccionada
     if 'especie_sel' not in st.session_state: 
@@ -298,20 +305,18 @@ def inicializar_estado_de_sesion():
     if 'inventario_df' in st.session_state:
         del st.session_state.inventario_df
         st.warning("⚠️ Se detectó y eliminó una variable de sesión antigua (inventario_df). Se forzará un reinicio.")
-        # FIX: Usar st.rerun()
         st.rerun()
         
 inicializar_estado_de_sesion()
 
 # -------------------------------------------------
-# --- SECCIONES DE LA APLICACIÓN (EN FUNCIÓN) ---
+# --- SECCIONES DE LA APLICACIÓN ---
 # -------------------------------------------------
 
-# --- 1. CÁLCULO Y GRÁFICOS
+# --- 1. CÁLCULO Y GRÁFICOS (SIN CAMBIOS)
 def render_calculadora_y_graficos():
     st.title("🌳 1. Cálculo de Captura de Carbono")
     
-    # 1. CÁLCULO SEGURO DEL INVENTARIO COMPLETO Y TOTAL (desde la lista)
     df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
 
@@ -320,14 +325,10 @@ def render_calculadora_y_graficos():
     col_proj, col_hectareas = st.columns([2, 1])
 
     with col_proj:
-        # Usamos el key='proyecto'. El valor se actualiza automáticamente en st.session_state.proyecto
         st.text_input("Nombre del Proyecto (Opcional)", value=st.session_state.proyecto, placeholder="Ej: Reforestación Bosque Seco 2024", key='proyecto') 
-        # LÍNEA REMOVIDA: st.session_state.proyecto = nombre_proyecto
 
     with col_hectareas:
-        # Usamos el key='hectareas'. El valor se actualiza automáticamente en st.session_state.hectareas
         st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas', help="Dejar en 0 si no se aplica o no se conoce el dato.")
-        # LÍNEA REMOVIDA: st.session_state.hectareas = hectareas
             
     st.divider()
 
@@ -342,11 +343,9 @@ def render_calculadora_y_graficos():
             st.subheader("Entrada de Lote por Especie")
             
             with st.form("lote_form", clear_on_submit=False):
-                # El valor por defecto es el de session_state
                 especie_sel = st.selectbox("Especie / Tipo de Árbol", list(DENSIDADES.keys()), key='especie_sel', index=list(DENSIDADES.keys()).index(st.session_state.especie_sel) if st.session_state.especie_sel in DENSIDADES else 0)
                 
                 if especie_sel == 'Densidad Manual (g/cm³)':
-                    # El valor por defecto es el de session_state
                     st.number_input("Densidad de madera (ρ, g/cm³)", min_value=0.1, max_value=1.5, value=st.session_state.densidad_manual_input, step=0.01, key='densidad_manual_input')
                 else:
                     rho_value = DENSIDADES[especie_sel]
@@ -354,11 +353,8 @@ def render_calculadora_y_graficos():
                 
                 st.markdown("---")
                 
-                # El valor por defecto es el de session_state
                 st.number_input("Cantidad de Árboles (n)", min_value=0, step=1, key='cantidad_input', value=st.session_state.cantidad_input)
-                # El valor por defecto es el de session_state
                 st.slider("DAP promedio (cm)", min_value=0.0, max_value=150.0, step=1.0, key='dap_slider', help="Diámetro a la Altura del Pecho. 🌳", value=st.session_state.dap_slider)
-                # El valor por defecto es el de session_state
                 st.slider("Altura promedio (m)", min_value=0.0, max_value=50.0, step=0.1, key='altura_slider', help="Altura total del árbol. 🌲", value=st.session_state.altura_slider)
                 
                 st.form_submit_button("➕ Añadir Lote al Inventario", on_click=agregar_lote)
@@ -366,7 +362,6 @@ def render_calculadora_y_graficos():
         with col_totales:
             st.subheader("Inventario Acumulado")
             
-            # CRÍTICO: Contar desde la lista
             total_arboles_registrados = sum(item['Cantidad'] for item in st.session_state.inventario_list)
             
             if total_arboles_registrados > 0:
@@ -374,15 +369,14 @@ def render_calculadora_y_graficos():
                 col_deshacer.button("↩️ Deshacer Último Lote", on_click=deshacer_ultimo_lote, help="Elimina la última fila añadida a la tabla.")
                 col_limpiar.button("🗑️ Limpiar Inventario Total", on_click=limpiar_inventario, help="Elimina todas las entradas y reinicia el cálculo.")
                 
-                # Botón de Descarga
                 col_excel, _ = st.columns([1, 4])
                 
                 excel_data = generar_excel_memoria(
-                    df_inventario_completo.copy(), # Usa el DF completo calculado
-                    st.session_state.proyecto, # Acceso directo
-                    st.session_state.hectareas, # Acceso directo
+                    df_inventario_completo.copy(), 
+                    st.session_state.proyecto, 
+                    st.session_state.hectareas, 
                     total_arboles_registrados, 
-                    co2e_proyecto_ton # Usa el valor calculado de forma segura
+                    co2e_proyecto_ton 
                 )
                 
                 with col_excel:
@@ -396,7 +390,6 @@ def render_calculadora_y_graficos():
                     
                 st.markdown("---")
                 st.caption("Detalle de los Lotes Añadidos (Unidades en Toneladas):")
-                # Mostrar el DF completo calculado
                 st.dataframe(df_inventario_completo.drop(columns=['Carbono Lote (Ton)', 'Detalle Cálculo']), use_container_width=True, hide_index=True)
                 
             else:
@@ -409,7 +402,6 @@ def render_calculadora_y_graficos():
         else:
             df_inventario = df_inventario_completo.copy()
             
-            # Cálculo seguro de KPIs (ya tenemos co2e_proyecto_ton)
             total_arboles_registrados = df_inventario['Cantidad'].sum()
             biomasa_total_ton = df_inventario['Biomasa Lote (Ton)'].sum()
 
@@ -419,7 +411,6 @@ def render_calculadora_y_graficos():
             kpi2.metric("Biomasa Total", f"{biomasa_total_ton:,.2f} Ton")
             kpi3.metric("CO2e Capturado", f"**{co2e_proyecto_ton:,.2f} Toneladas**", delta="Total del Proyecto", delta_color="normal")
             
-            # Data para gráficos 
             df_graficos = df_inventario.groupby('Especie').agg(
                 Total_CO2e_Ton=('CO2e Lote (Ton)', 'sum'),
                 Conteo_Arboles=('Cantidad', 'sum')
@@ -436,7 +427,6 @@ def render_calculadora_y_graficos():
         st.markdown("## 1.3 Detalle Técnico del Lote (Cálculo en kg)")
         if not st.session_state.inventario_list: st.info("Aún no hay lotes de árboles registrados.")
         else:
-            # CRÍTICO: Usar enumerate() para obtener índice (i) y valor (row)
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP: {row['DAP (cm)']:.1f} cm" 
                 for i, row in enumerate(st.session_state.inventario_list)
@@ -451,15 +441,13 @@ def render_calculadora_y_graficos():
         st.markdown("## 1.4 Simulación de Potencial de Captura a Largo Plazo")
         if not st.session_state.inventario_list: st.info("Por favor, registre al menos un lote de árboles para iniciar la simulación.")
         else:
-            df_inventario = df_inventario_completo # Usar el DF completo calculado
-            # FIX APLICADO: Usar enumerate() para obtener índice (i) y valor (row)
+            df_inventario = df_inventario_completo 
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles) - DAP Inicial: {row['DAP (cm)']:.1f} cm" 
                 for i, row in enumerate(st.session_state.inventario_list) 
             ]
             lote_sim_index = st.selectbox("Seleccione el Lote para la Proyección de Crecimiento:", options=range(len(lotes_info)), format_func=lambda x: lotes_info[x], key='sim_lote_select')
             
-            # Usar el DataFrame calculado para simular
             lote_seleccionado = df_inventario.iloc[[lote_sim_index]]
             especie_sim = lote_seleccionado['Especie'].iloc[0]
 
@@ -493,7 +481,7 @@ def render_gestion_memorias():
     st.warning("La funcionalidad de 'Gestión de Memorias' ha sido retirada temporalmente ya que causaba errores de tipo en la suma de inventario. Use el botón 'Descargar Reporte Excel' en la Sección 1 para guardar los datos.")
 
 
-# --- 3. MAPA ---
+# --- 3. MAPA (SIN CAMBIOS) ---
 def render_mapa():
     st.title("🗺️ 3. Localización del Proyecto")
 
@@ -506,36 +494,39 @@ def render_mapa():
     
     folium_static(m) 
 
-# --- 4. GAP CPSSA ---
+# --- 4. GAP CPSSA (CORRECCIÓN DE UNIDADES APLICADA) ---
 def render_gap_cpassa():
     st.title("📈 4. Análisis GAP de Mitigación Corporativa (CPSSA)")
     
-    # CÁLCULO SEGURO DEL TOTAL
     df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
     
-    if co2e_proyecto_ton <= 0:
+    # Convertimos la captura del proyecto de Toneladas a Miles de Toneladas para la comparación
+    co2e_proyecto_miles_ton = co2e_proyecto_ton / FACTOR_KG_A_TON 
+    
+    if co2e_proyecto_miles_ton <= 0:
         st.warning("⚠️ El inventario del proyecto debe tener CO2e registrado (sección 1) para realizar este análisis.")
         return
 
     st.subheader("Selección de Sede y Análisis")
     
-    sede_sel = st.selectbox("Seleccione la Sede (Huella Corporativa)", list(EMISIONES_SEDES.keys()))
+    sede_sel = st.selectbox("Seleccione la Sede (Huella Corporativa)", list(HUELLA_CORPORATIVA.keys()))
     
-    emisiones_sede_ton = EMISIONES_SEDES[sede_sel] / FACTOR_KG_A_TON
+    # El valor ya está en Miles de tCO2e
+    emisiones_sede_miles_ton = HUELLA_CORPORATIVA[sede_sel] 
     
     st.markdown("---")
     
     col_sede, col_proyecto = st.columns(2)
     
     with col_sede:
-        st.metric(f"Emisiones Anuales de '{sede_sel}' (Ton CO2e)", f"**{emisiones_sede_ton:,.2f} Ton**", help="Valor extraído del Informe de Huella de Carbono Corporativa 2024, convertido a Toneladas.")
+        st.metric(f"Emisiones Anuales de '{sede_sel}' (**Miles de Ton CO2e**)", f"**{emisiones_sede_miles_ton:,.2f} Miles Ton**", help="Valor extraído del Informe de Huella de Carbono Corporativa 2024, en Miles de Toneladas.")
     
     with col_proyecto:
-        st.metric("Captura Total del Proyecto (Ton CO2e)", f"**{co2e_proyecto_ton:,.2f} Ton**", delta="Total del Inventario Actual")
+        st.metric("Captura Total del Proyecto (**Miles de Ton CO2e**)", f"**{co2e_proyecto_miles_ton:,.2f} Miles Ton**", delta="Total del Inventario Actual (convertido)")
         
-    if emisiones_sede_ton > 0:
-        porcentaje_mitigacion = (co2e_proyecto_ton / emisiones_sede_ton) * 100
+    if emisiones_sede_miles_ton > 0:
+        porcentaje_mitigacion = (co2e_proyecto_miles_ton / emisiones_sede_miles_ton) * 100
         
         st.subheader("Resultado del GAP de Mitigación")
         
@@ -546,61 +537,81 @@ def render_gap_cpassa():
         else:
             st.info(f"El proyecto compensa el **{porcentaje_mitigacion:,.2f}%** de las emisiones anuales de '{sede_sel}'.")
 
-        co2e_restante = max(0, emisiones_sede_ton - co2e_proyecto_ton)
-        st.metric("CO2e Restante por Mitigar", f"**{co2e_restante:,.2f} Ton**")
+        co2e_restante = max(0, emisiones_sede_miles_ton - co2e_proyecto_miles_ton)
+        st.metric("CO2e Restante por Mitigar (Miles de Ton)", f"**{co2e_restante:,.2f} Miles Ton**")
 
-# --- 5. GESTIÓN DE ESPECIE ---
+# --- 5. GESTIÓN DE ESPECIE (CORRECCIÓN DE EDICIÓN TOTAL Y PERSISTENCIA APLICADA) ---
 def render_gestion_especie():
     st.title("🌿 5. Gestión de Datos de Crecimiento de Especies")
-    st.markdown("Edite o ingrese datos de crecimiento (DAP, Altura) y consumo de agua por año para las especies, construyendo una base de datos histórica para refinar las simulaciones de crecimiento futuras.")
+    st.markdown("Edite, **agregue o elimine** entradas en la Base de Datos Histórica. Esta información se **guarda de forma persistente** y ayuda a refinar las simulaciones de crecimiento futuras.")
 
     st.subheader("Base de Datos Histórica de Especies (Editable)")
 
-    especie_list = list(DENSIDADES.keys())
-    especie_list.remove('Densidad Manual (g/cm³)')
-    especie_a_gestionar = st.selectbox("Seleccione la Especie a Gestionar", especie_list, key='gestion_especie_sel')
-
-    df_filtrado = st.session_state.especies_bd[st.session_state.especies_bd['Especie'] == especie_a_gestionar]
+    # 1. Preparar el DataFrame completo para la edición
+    df_actual = st.session_state.especies_bd.copy()
     
-    # Crear un DataFrame base para el editor si no hay datos
-    if df_filtrado.empty:
-        df_base = pd.DataFrame({'Especie': [especie_a_gestionar], 'Año': [1], 'DAP (cm)': [0.0], 'Altura (m)': [0.0], 'Consumo Agua (L/año)': [0.0]})
-        df_edit = st.data_editor(df_base, num_rows="dynamic", use_container_width=True)
+    # Si el DF está vacío, proporcionamos una estructura inicial para que el editor funcione bien.
+    if df_actual.empty:
+        df_base = pd.DataFrame(columns=['Especie', 'Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)'])
     else:
-        df_edit = st.data_editor(df_filtrado, num_rows="dynamic", use_container_width=True)
-        
-    if st.button(f"Guardar Cambios en la BD de {especie_a_gestionar}"):
-        
-        st.session_state.especies_bd = st.session_state.especies_bd[st.session_state.especies_bd['Especie'] != especie_a_gestionar]
-        
-        df_validas = df_edit[(df_edit['DAP (cm)'] > 0) | (df_edit['Altura (m)'] > 0) | (df_edit['Consumo Agua (L/año)'] > 0)].copy()
-        
-        df_validas['Especie'] = especie_a_gestionar
-        
-        new_data = pd.concat([st.session_state.especies_bd, df_validas], ignore_index=True)
-        st.session_state.especies_bd = new_data.sort_values(by=['Especie', 'Año'])
+        df_base = df_actual.fillna(0) # Reemplazamos NaNs con 0 para evitar errores en el data_editor
 
-        st.success(f"Datos de crecimiento y agua para '{especie_a_gestionar}' actualizados y guardados.")
-        # FIX: Usar st.rerun()
+    # 2. El Widget de Edición de Datos
+    df_edit = st.data_editor(
+        df_base, 
+        num_rows="dynamic", # Permite agregar y eliminar filas
+        use_container_width=True,
+        column_config={
+            "Especie": st.column_config.TextColumn("Especie", help="Nombre de la nueva especie o una existente", required=True),
+            "Año": st.column_config.NumberColumn("Año", help="Año de medición (e.g., 1, 5, 10)", min_value=1, required=True, format="%d"),
+            "DAP (cm)": st.column_config.NumberColumn("DAP (cm)", format="%.2f", help="Diámetro a la altura del pecho", min_value=0.0),
+            "Altura (m)": st.column_config.NumberColumn("Altura (m)", format="%.2f", help="Altura total del árbol", min_value=0.0),
+            "Consumo Agua (L/año)": st.column_config.NumberColumn("Consumo Agua (L/año)", format="%.2f", help="Consumo promedio de agua", min_value=0.0)
+        }
+    )
+    
+    # 3. Guardar los cambios
+    if st.button("💾 Guardar Cambios en la BD Histórica"):
+        
+        # Validar y filtrar filas: Debe tener un nombre de especie y al menos un valor numérico > 0
+        cols_a_validar = ['DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)']
+        df_edit_clean = df_edit.replace('', pd.NA).dropna(subset=['Especie'])
+        
+        df_validas = df_edit_clean[
+            (df_edit_clean['Especie'].astype(str).str.strip() != "") & 
+            (pd.to_numeric(df_edit_clean[cols_a_validar].fillna(0).sum(axis=1), errors='coerce').fillna(0) > 0)
+        ].copy()
+        
+        if df_validas.empty and not df_edit.empty:
+            st.warning("No se guardaron cambios. Asegúrate de ingresar un nombre de Especie y al menos un valor numérico (DAP, Altura o Agua) mayor a cero en cada fila.")
+            return
+        
+        # Aseguramos que los tipos de datos sean correctos antes de guardar
+        df_validas['Especie'] = df_validas['Especie'].astype(str)
+        for col in ['Año', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)']:
+            df_validas[col] = pd.to_numeric(df_validas[col], errors='coerce').fillna(0)
+
+
+        # CRÍTICO: Sobreescribir la variable de sesión con el DataFrame editado y limpio
+        st.session_state.especies_bd = df_validas.sort_values(by=['Especie', 'Año']).reset_index(drop=True)
+        st.success(f"Base de Datos Histórica actualizada. Se registraron **{len(st.session_state.especies_bd)}** entradas válidas.")
+        
         st.rerun()
 
     st.markdown("---")
-    st.caption("Estructura de la Base de Datos Completa:")
-    st.dataframe(st.session_state.especies_bd, use_container_width=True)
+    st.caption("Estructura de la Base de Datos Histórica Completa (Persistente):")
+    st.dataframe(st.session_state.especies_bd, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------
-# --- FUNCIÓN PRINCIPAL DE LA APLICACIÓN ---
+# --- FUNCIÓN PRINCIPAL DE LA APLICACIÓN (SIN CAMBIOS) ---
 # -------------------------------------------------
 def main_app():
     
-    # 1. CÁLCULO SEGURO DEL INVENTARIO COMPLETO Y TOTAL
     df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_total_sidebar = get_co2e_total_seguro(df_inventario_completo)
     
-    # 2. Definir la navegación en la barra lateral
     st.sidebar.title("Menú de Navegación")
     
-    # **AÑADIR BOTÓN DE REINICIO FORZADO**
     st.sidebar.button("🚨 Reiniciar App (Limpieza Total)", on_click=reiniciar_app_completo, help="¡Usar solo si hay errores persistentes! Borra todo el estado de la sesión.", type="primary")
 
     menu_options = [
@@ -613,11 +624,9 @@ def main_app():
     selection = st.sidebar.selectbox("Seleccione la Sección", menu_options)
     
     st.sidebar.markdown("---")
-    # Los valores se acceden directamente del session_state, ya que se actualizan automáticamente
     st.sidebar.caption("Proyecto: " + (st.session_state.proyecto if st.session_state.proyecto else "Sin nombre"))
     st.sidebar.metric("CO2e Inventario Total", f"{co2e_total_sidebar:,.2f} Ton") 
     
-    # 3. Renderizar la sección seleccionada
     if selection == "1. Cálculo de Captura":
         render_calculadora_y_graficos()
     elif selection == "3. Mapa":
@@ -627,7 +636,6 @@ def main_app():
     elif selection == "5. Gestión de Especie":
         render_gestion_especie()
     
-    # --- FOOTER (Común para todas las pestañas) ---
     st.caption("Fórmula: AGB = 0.112 × (ρ × D² × H)^0.916 | Chave et al. (2014). Factores C=0.47, BGB=0.28, CO2e=3.67. Unidades en Toneladas.")
 
 # --- LÍNEA VITAL DE EJECUCIÓN ---
