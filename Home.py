@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import io
 import json
-import re # Necesario para la limpieza del detalle técnico
+import re
 
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="Gestión de Soluciones Basadas en la Naturaleza(SbN)", layout="wide", page_icon="🌳")
