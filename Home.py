@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import io
 import json
-import re # ¡CORRECCIÓN APLICADA: Módulo de expresiones regulares añadido!
+import re # Módulo de expresiones regulares.
 
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="Plataforma de Gestión NBS", layout="wide", page_icon="🌳")
@@ -78,7 +78,6 @@ df_columns_types = {
     'Densidad (ρ)': float, 'Años Plantados': int, 'Consumo Agua Unitario (L/año)': float, 
     'Precio Plantón Unitario (S/)': float, 
     'Detalle Cálculo': str,
-    # 'Latitud' y 'Longitud' ELIMINADOS
 }
 df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Años Plantados', 'Consumo Agua Unitario (L/año)', 'Precio Plantón Unitario (S/)'] 
 
@@ -309,7 +308,6 @@ def inicializar_estado_de_sesion():
         ]
         df_bd_inicial = pd.DataFrame(data_rows, columns=df_cols)
         st.session_state.especies_bd = df_bd_inicial
-    # 'lotes_mapa' ELIMINADO
     if 'proyecto' not in st.session_state:
         st.session_state.proyecto = "Proyecto Reforestación CPSSA"
     if 'hectareas' not in st.session_state:
@@ -324,7 +322,6 @@ def inicializar_estado_de_sesion():
     if 'densidad_manual_input' not in st.session_state: st.session_state.densidad_manual_input = 0.5
     if 'consumo_agua_manual_input' not in st.session_state: st.session_state.consumo_agua_manual_input = 1000.0
     if 'precio_planton_input' not in st.session_state: st.session_state.precio_planton_input = 5.0 
-    # 'latitud_input' y 'longitud_input' ELIMINADOS
 
 
 def reiniciar_app_completo():
@@ -356,8 +353,6 @@ def agregar_lote():
         rho = info['Densidad']
         consumo_agua_unitario = info['Agua_L_Anio']
 
-    # Latitud/Longitud ELIMINADOS de aquí y del estado de sesión.
-
     if cantidad <= 0 or dap <= 0 or altura <= 0 or rho <= 0 or años < 0 or consumo_agua_unitario < 0 or precio_planton_unitario < 0:
         st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero, y los valores de Años, Agua y Precio sean mayores o iguales a cero.")
         return
@@ -374,12 +369,9 @@ def agregar_lote():
         'Consumo Agua Unitario (L/año)': float(consumo_agua_unitario),
         'Precio Plantón Unitario (S/)': float(precio_planton_unitario), 
         'Detalle Cálculo': detalle_calculo,
-        # 'Latitud' y 'Longitud' ELIMINADOS
     }
     
     st.session_state.inventario_list.append(nuevo_lote)
-    
-    # st.session_state.lotes_mapa ELIMINADO
     
     st.success(f"Lote de {cantidad} árboles de {especie} añadido.")
 
@@ -388,7 +380,6 @@ def deshacer_ultimo_lote():
     """Elimina el último lote añadido."""
     if st.session_state.inventario_list:
         st.session_state.inventario_list.pop()
-        # st.session_state.lotes_mapa ELIMINADO
         st.success("Último lote eliminado.")
     else:
         st.warning("El inventario está vacío.")
@@ -396,16 +387,16 @@ def deshacer_ultimo_lote():
 def limpiar_inventario():
     """Limpia todo el inventario."""
     st.session_state.inventario_list = []
-    # st.session_state.lotes_mapa ELIMINADO
     st.success("Inventario completamente limpiado.")
 
 
 def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton, total_agua_l, total_costo):
     """Genera el archivo Excel en memoria con el resumen y el inventario detallado."""
     output = io.BytesIO()
-    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    # Asegurando el uso del motor xlsxwriter (ya que es la dependencia que agregamos)
+    writer = pd.ExcelWriter(output, engine='xlsxwriter') 
     
-    # 1. Definir columnas a excluir (Solo 'Detalle Cálculo' ya que Lat/Lon fueron eliminados del DF)
+    # 1. Definir columnas a excluir 
     cols_to_drop = ['Detalle Cálculo']
     df_inventario_download = df_inventario.drop(columns=cols_to_drop, errors='ignore')
 
@@ -441,7 +432,7 @@ def render_calculadora_y_graficos():
     costo_proyecto_total = get_costo_total_seguro(df_inventario_completo)
     agua_proyecto_total = get_agua_total_seguro(df_inventario_completo)
 
-    # --- INFORMACIÓN DEL PROYECTO (Lat/Lon ELIMINADOS) ---
+    # --- INFORMACIÓN DEL PROYECTO ---
     st.subheader("📋 Información del Proyecto")
     col_proj, col_hectareas = st.columns([2, 1])
     with col_proj:
@@ -449,8 +440,6 @@ def render_calculadora_y_graficos():
     with col_hectareas:
         st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas', help="Dejar en 0 si no se aplica o no se conoce el dato.")
     
-    # Coordenadas ELIMINADAS
-
     st.divider()
 
     # --- NAVEGACIÓN POR PESTAÑAS ---
@@ -636,19 +625,29 @@ def render_calculadora_y_graficos():
             lote_seleccionado = st.selectbox("Seleccione el Lote para el Detalle:", lotes_info)
             lote_index = lotes_info.index(lote_seleccionado)
             
-            # INICIO CORRECCIÓN DE EXTRACCIÓN Y LIMPIEZA DE TEXTO (para evitar TypeError y limpiar el encabezado)
+            # INICIO CORRECCIÓN DEFINITIVA PARA EVITAR TypeError: expected string or bytes-like object, got 'Series'
             
-            # Acceso directo a la celda para forzar el valor (string)
-            detalle_markdown = df_inventario_completo.iloc[lote_index, df_inventario_completo.columns.get_loc('Detalle Cálculo')]
+            # 1. Extracción del valor de la celda
+            detalle_valor = df_inventario_completo.iloc[lote_index, df_inventario_completo.columns.get_loc('Detalle Cálculo')]
             
+            # 2. Lógica CRÍTICA: Convertir a string y manejar tipos no válidos (Series, NaN, None)
+            if isinstance(detalle_valor, pd.Series):
+                # Si es una Serie (columna), extrae el valor escalar y lo convierte a string.
+                detalle_markdown = str(detalle_valor.iloc[0])
+            elif pd.isna(detalle_valor) or detalle_valor is None:
+                # Si es NaN o None, usa un string vacío.
+                detalle_markdown = ""
+            else:
+                # Si ya es un valor escalar, lo convierte a string.
+                detalle_markdown = str(detalle_valor)
+
             st.markdown(f"### Detalles Técnicos y Fórmulas para {lote_seleccionado}")
             
-            # Se usa re.sub para eliminar cualquier patrón de "Detalle Cálculo..." si se llegara a duplicar
+            # Aplicamos limpieza (re.sub) solo a un string seguro
             detalle_limpio = re.sub(r"Detalle Cálculo.*?\n", "", detalle_markdown, flags=re.DOTALL)
             
             st.markdown(detalle_limpio)
-
-            # FIN CORRECCIÓN DE EXTRACCIÓN Y LIMPIEZA DE TEXTO
+            # FIN CORRECCIÓN DEFINITIVA
 
 
     with tab4:
@@ -719,9 +718,6 @@ def render_calculadora_y_graficos():
                 st.plotly_chart(fig_dap_alt, use_container_width=True)
             else:
                 st.warning("Simulación no ejecutada o lote sin datos.")
-
-
-# Función render_mapa ELIMINADA
 
 
 def render_gap_cpassa():
@@ -869,8 +865,6 @@ def main_app():
     
     if selection == "1. Cálculo de Captura":
         render_calculadora_y_graficos()
-    # elif selection == "3. Mapa": ELIMINADO
-    #     render_mapa()
     elif selection == "4. GAP CPSSA":
         render_gap_cpassa()
     elif selection == "5. Gestión de Especie":
