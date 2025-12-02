@@ -21,6 +21,14 @@ FACTOR_KG_A_TON = 1000 # Constante para conversión
 PRECIO_AGUA_POR_M3 = 3.0 # Precio fijo del m3 de agua en Perú (3 Soles)
 FACTOR_L_A_M3 = 1000 # 1 m3 = 1000 Litros
 
+# NUEVAS CONSTANTES PARA EQUIVALENCIAS AMBIENTALES (Ton CO2e)
+EQUIVALENCIAS_TON_CO2E = {
+    "Bombillos LED (unidades)": 1659, # Equivalente a cambiar bombillas incandescentes por LED por un año.
+    "Kilómetros de Viaje en Auto (km)": 40161, # 1 Ton CO2e es aprox 2497 millas. 2497 * 1.609 = 4016 km
+    "Teléfonos Inteligentes Cargados (unidades)": 243902, # Cargadas
+    "Barriles de Petróleo Consumidos (unidades)": 2.1
+}
+
 # BASE DE DATOS INICIAL DE DENSIDADES, AGUA Y COSTO
 DENSIDADES_BASE = {
     'Eucalipto Torrellana (Corymbia torelliana)': {'Densidad': 0.46, 'Agua_L_Anio': 1500, 'Precio_Plantón': 5.00}, 
@@ -76,8 +84,8 @@ df_columns_types = {
     'Especie': str, 'Cantidad': int, 'DAP (cm)': float, 'Altura (m)': float, 
     'Densidad (ρ)': float, 'Años Plantados': int, 'Consumo Agua Unitario (L/año)': float, 
     'Precio Plantón Unitario (S/)': float, 
+    'Riego Controlado': bool, # NUEVO: Para saber si el agua y costo se aplican
     'Detalle Cálculo': str,
-    # 'Latitud' y 'Longitud' ELIMINADOS
 }
 df_columns_numeric = ['Cantidad', 'DAP (cm)', 'Altura (m)', 'Densidad (ρ)', 'Años Plantados', 'Consumo Agua Unitario (L/año)', 'Precio Plantón Unitario (S/)'] 
 
@@ -141,7 +149,7 @@ def get_agua_total_seguro(df):
         return 0.0
     return df['Consumo Agua Total Lote (L)'].sum()
 
-
+# CORRECCIÓN: Uso de $$ para asegurar el renderizado de LaTeX en Streamlit
 def calcular_co2_arbol(rho, dap_cm, altura_m):
     """Calcula la biomasa, carbono y CO2e por árbol en KILOGRAMOS y genera el detalle con fórmulas."""
     detalle = ""
@@ -153,7 +161,6 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
         
     # Calcular AGB (Above-Ground Biomass) en kg
     # Fórmula: AGB = 0.112 × (ρ × D² × H)^0.916 (Chave et al. 2014)
-    # rho: Densidad (g/cm³), dap_cm: Diámetro (cm), altura_m: Altura (m)
     agb_kg = AGB_FACTOR_A * ((rho * (dap_cm**2) * altura_m)**AGB_FACTOR_B)
     
     # Calcular BGB (Below-Ground Biomass) en kg
@@ -170,33 +177,44 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     
     # Generación del detalle técnico para la pestaña 3
     detalle += f"### Valores de Entrada\n"
-    detalle += f"* **Densidad (ρ):** `{rho:.3f} g/cm³`\n"
+    detalle += f"* **Densidad ($\\rho$):** `{rho:.3f} g/cm³`\n"
     detalle += f"* **DAP (D):** `{dap_cm:.2f} cm`\n"
     detalle += f"* **Altura (H):** `{altura_m:.2f} m`\n\n"
     
     detalle += f"## 1. Biomasa Aérea (AGB) por Árbol\n"
-    detalle += f"**Fórmula (kg):** $AGB = {AGB_FACTOR_A} \\times (\\rho \\times D^2 \\times H)^{AGB_FACTOR_B}$ (Chave et al. 2014)\n"
-    detalle += f"**Sustitución:** $AGB = {AGB_FACTOR_A:.3f} \\times ({rho:.3f} \\times {dap_cm:.2f}^2 \\times {altura_m:.2f})^{AGB_FACTOR_B:.3f}$\n"
+    detalle += f"**Fórmula (kg):** (Chave et al. 2014)\n"
+    # Uso de $$ para MathJax/LaTeX Block
+    detalle += f"$$AGB = {AGB_FACTOR_A} \\times (\\rho \\times D^2 \\times H)^{AGB_FACTOR_B}$$\n"
+    detalle += f"**Sustitución:**\n"
+    detalle += f"$$AGB = {AGB_FACTOR_A:.3f} \\times ({rho:.3f} \\times {dap_cm:.2f}^2 \\times {altura_m:.2f})^{AGB_FACTOR_B:.3f}$$\n"
     detalle += f"**Resultado AGB (kg):** `{agb_kg:.4f}`\n\n"
     
     detalle += f"## 2. Biomasa Subterránea (BGB)\n"
-    detalle += f"**Fórmula (kg):** $BGB = AGB \\times {FACTOR_BGB_SECO}$\n"
-    detalle += f"**Sustitución:** $BGB = {agb_kg:.4f} \\times {FACTOR_BGB_SECO}$\n"
+    detalle += f"**Fórmula (kg):**\n"
+    detalle += f"$$BGB = AGB \\times {FACTOR_BGB_SECO}$$\n"
+    detalle += f"**Sustitución:**\n"
+    detalle += f"$$BGB = {agb_kg:.4f} \\times {FACTOR_BGB_SECO}$$\n"
     detalle += f"**Resultado BGB (kg):** `{bgb_kg:.4f}`\n\n"
     
     detalle += f"## 3. Biomasa Total (AGB + BGB)\n"
-    detalle += f"**Fórmula (kg):** $Biomasa Total = AGB + BGB$\n"
-    detalle += f"**Sustitución:** $Biomasa Total = {agb_kg:.4f} + {bgb_kg:.4f}$\n"
+    detalle += f"**Fórmula (kg):**\n"
+    detalle += f"$$Biomasa Total = AGB + BGB$$\n"
+    detalle += f"**Sustitución:**\n"
+    detalle += f"$$Biomasa Total = {agb_kg:.4f} + {bgb_kg:.4f}$$\n"
     detalle += f"**Resultado Biomasa Total (kg):** `{biomasa_total:.4f}`\n\n"
     
     detalle += f"## 4. Carbono Capturado (C)\n"
-    detalle += f"**Fórmula (kg):** $C = Biomasa Total \\times {FACTOR_CARBONO}$\n"
-    detalle += f"**Sustitución:** $C = {biomasa_total:.4f} \\times {FACTOR_CARBONO}$\n"
+    detalle += f"**Fórmula (kg):**\n"
+    detalle += f"$$C = Biomasa Total \\times {FACTOR_CARBONO}$$\n"
+    detalle += f"**Sustitución:**\n"
+    detalle += f"$$C = {biomasa_total:.4f} \\times {FACTOR_CARBONO}$$\n"
     detalle += f"**Resultado Carbono (kg):** `{carbono_total:.4f}`\n\n"
     
     detalle += f"## 5. CO2 Equivalente Capturado (CO2e)\n"
-    detalle += f"**Fórmula (kg):** $CO2e = C \\times {FACTOR_CO2E}$\n"
-    detalle += f"**Sustitución:** $CO2e = {carbono_total:.4f} \\times {FACTOR_CO2E}$\n"
+    detalle += f"**Fórmula (kg):**\n"
+    detalle += f"$$CO2e = C \\times {FACTOR_CO2E}$$\n"
+    detalle += f"**Sustitución:**\n"
+    detalle += f"$$CO2e = {carbono_total:.4f} \\times {FACTOR_CO2E}$$\n"
     detalle += f"**Resultado CO2e (kg):** `{co2e_total:.4f}`"
     
     return agb_kg, bgb_kg, biomasa_total, co2e_total, detalle
@@ -206,7 +224,8 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
 def recalcular_inventario_completo(inventario_list):
     """
     Toma la lista de entradas (List[Dict]) y genera un DataFrame completo y limpio, 
-    incluyendo CO2e, Consumo de Agua y Costo Total (Plantones + Agua Acumulada).
+    incluyendo CO2e, Consumo de Agua y Costo Total (Plantones + Agua Acumulada), 
+    respetando el estado de Riego Controlado.
     """
     if not inventario_list:
         # Crear un DF vacío con todas las columnas esperadas
@@ -228,6 +247,8 @@ def recalcular_inventario_completo(inventario_list):
                 default_val = ""
             elif df_columns_types[col] == int:
                 default_val = 0
+            elif df_columns_types[col] == bool: # NUEVO: Riego Controlado
+                default_val = False
             else: # float
                 default_val = 0.0
             df_calculado[col] = default_val
@@ -246,6 +267,7 @@ def recalcular_inventario_completo(inventario_list):
         consumo_agua_uni = row['Consumo Agua Unitario (L/año)'] 
         precio_planton_uni = row['Precio Plantón Unitario (S/)'] 
         años_plantados = row['Años Plantados'] 
+        riego_controlado = row['Riego Controlado'] # NUEVO: Estado del Riego
 
         # 1. Cálculo de CO2e (Biomasa, Carbono, CO2e por árbol en kg)
         _, _, biomasa_uni_kg, co2e_uni_kg, detalle = calcular_co2_arbol(rho, dap, altura)
@@ -255,20 +277,22 @@ def recalcular_inventario_completo(inventario_list):
         carbono_lote_ton = (biomasa_uni_kg * FACTOR_CARBONO * cantidad) / FACTOR_KG_A_TON
         co2e_lote_ton = (co2e_uni_kg * cantidad) / FACTOR_KG_A_TON
 
-        # 3. Costo y Agua
+        # 3. Costo y Agua (Lógica de Riego Controlado)
         costo_planton_lote = cantidad * precio_planton_uni
-        consumo_agua_lote_l = cantidad * consumo_agua_uni
+        consumo_agua_lote_l = 0.0
+        costo_agua_acumulado_lote = 0.0
         
-        # --- CÁLCULO ACUMULADO DEL AGUA (CORREGIDO) ---
+        if riego_controlado:
+            consumo_agua_lote_l = cantidad * consumo_agua_uni
+            
+            # Calcular el costo de agua por UN AÑO (operación anual)
+            volumen_agua_lote_m3_anual = consumo_agua_lote_l / FACTOR_L_A_M3
+            costo_agua_anual_lote = volumen_agua_lote_m3_anual * PRECIO_AGUA_POR_M3
+            
+            # Costo de agua acumulado: Costo Anual * Años Plantados (solo si hay riego)
+            costo_agua_acumulado_lote = costo_agua_anual_lote * años_plantados
         
-        # Calcular el costo de agua por UN AÑO (operación anual)
-        volumen_agua_lote_m3_anual = consumo_agua_lote_l / FACTOR_L_A_M3
-        costo_agua_anual_lote = volumen_agua_lote_m3_anual * PRECIO_AGUA_POR_M3
-        
-        # Costo de agua acumulado: Costo Anual * Años Plantados
-        costo_agua_acumulado_lote = costo_agua_anual_lote * años_plantados
-        
-        # Costo total = Costo Plantones (Inversión Inicial) + Costo Agua (Operación Acumulada)
+        # Costo total = Costo Plantones (Inversión Inicial) + Costo Agua (Operación Acumulada - solo si hay riego)
         costo_total_lote = costo_planton_lote + costo_agua_acumulado_lote
         
         # --- FIN DE CÁLCULO ---
@@ -308,7 +332,6 @@ def inicializar_estado_de_sesion():
         ]
         df_bd_inicial = pd.DataFrame(data_rows, columns=df_cols)
         st.session_state.especies_bd = df_bd_inicial
-    # 'lotes_mapa' ELIMINADO
     if 'proyecto' not in st.session_state:
         st.session_state.proyecto = "Proyecto Reforestación CPSSA"
     if 'hectareas' not in st.session_state:
@@ -323,7 +346,7 @@ def inicializar_estado_de_sesion():
     if 'densidad_manual_input' not in st.session_state: st.session_state.densidad_manual_input = 0.5
     if 'consumo_agua_manual_input' not in st.session_state: st.session_state.consumo_agua_manual_input = 1000.0
     if 'precio_planton_input' not in st.session_state: st.session_state.precio_planton_input = 5.0 
-    # 'latitud_input' y 'longitud_input' ELIMINADOS
+    if 'riego_controlado_input' not in st.session_state: st.session_state.riego_controlado_input = True # NUEVO: Por defecto activado
 
 
 def reiniciar_app_completo():
@@ -341,7 +364,11 @@ def agregar_lote():
     cantidad = st.session_state.cantidad_input
     dap = float(st.session_state.dap_slider) 
     altura = float(st.session_state.altura_slider)
-    años = st.session_state.anios_plantados_input
+    
+    # Campos que pueden ser dinámicos/condicionales
+    riego_controlado = st.session_state.riego_controlado_input
+    # Se toma el valor de años plantados del input, independientemente del checkbox. La lógica de costo lo manejará.
+    anios = st.session_state.anios_plantados_input 
     precio_planton_unitario = st.session_state.precio_planton_input 
     
     rho = 0.0
@@ -355,12 +382,15 @@ def agregar_lote():
         rho = info['Densidad']
         consumo_agua_unitario = info['Agua_L_Anio']
 
-    # Latitud/Longitud ELIMINADOS de aquí y del estado de sesión.
-
-    if cantidad <= 0 or dap <= 0 or altura <= 0 or rho <= 0 or años < 0 or consumo_agua_unitario < 0 or precio_planton_unitario < 0:
-        st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero, y los valores de Años, Agua y Precio sean mayores o iguales a cero.")
+    if cantidad <= 0 or dap <= 0 or altura <= 0 or rho <= 0 or precio_planton_unitario < 0:
+        st.error("Por favor, asegúrate de que Cantidad, DAP, Altura y Densidad sean mayores a cero, y el Precio de Plantón sea mayor o igual a cero.")
         return
-
+    
+    # Validación adicional si el riego está activo
+    if riego_controlado and (anios < 0 or consumo_agua_unitario < 0):
+        st.error("Si el proyecto tiene riego controlado, los 'Años Plantados' y el 'Consumo de Agua Unitario' deben ser mayores o iguales a cero.")
+        return
+    
     _, _, _, _, detalle_calculo = calcular_co2_arbol(rho, dap, altura)
     
     nuevo_lote = {
@@ -369,17 +399,14 @@ def agregar_lote():
         'DAP (cm)': float(dap), 
         'Altura (m)': float(altura), 
         'Densidad (ρ)': float(rho),
-        'Años Plantados': int(años),
+        'Años Plantados': int(anios), 
         'Consumo Agua Unitario (L/año)': float(consumo_agua_unitario),
         'Precio Plantón Unitario (S/)': float(precio_planton_unitario), 
+        'Riego Controlado': riego_controlado, # NUEVO
         'Detalle Cálculo': detalle_calculo,
-        # 'Latitud' y 'Longitud' ELIMINADOS
     }
     
     st.session_state.inventario_list.append(nuevo_lote)
-    
-    # st.session_state.lotes_mapa ELIMINADO
-    
     st.success(f"Lote de {cantidad} árboles de {especie} añadido.")
 
 
@@ -387,7 +414,6 @@ def deshacer_ultimo_lote():
     """Elimina el último lote añadido."""
     if st.session_state.inventario_list:
         st.session_state.inventario_list.pop()
-        # st.session_state.lotes_mapa ELIMINADO
         st.success("Último lote eliminado.")
     else:
         st.warning("El inventario está vacío.")
@@ -395,7 +421,6 @@ def deshacer_ultimo_lote():
 def limpiar_inventario():
     """Limpia todo el inventario."""
     st.session_state.inventario_list = []
-    # st.session_state.lotes_mapa ELIMINADO
     st.success("Inventario completamente limpiado.")
 
 
@@ -404,7 +429,7 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    # 1. Definir columnas a excluir (Solo 'Detalle Cálculo' ya que Lat/Lon fueron eliminados del DF)
+    # 1. Definir columnas a excluir 
     cols_to_drop = ['Detalle Cálculo']
     df_inventario_download = df_inventario.drop(columns=cols_to_drop, errors='ignore')
 
@@ -440,7 +465,7 @@ def render_calculadora_y_graficos():
     costo_proyecto_total = get_costo_total_seguro(df_inventario_completo)
     agua_proyecto_total = get_agua_total_seguro(df_inventario_completo)
 
-    # --- INFORMACIÓN DEL PROYECTO (Lat/Lon ELIMINADOS) ---
+    # --- INFORMACIÓN DEL PROYECTO ---
     st.subheader("📋 Información del Proyecto")
     col_proj, col_hectareas = st.columns([2, 1])
     with col_proj:
@@ -448,8 +473,6 @@ def render_calculadora_y_graficos():
     with col_hectareas:
         st.number_input("Hectáreas (ha)", min_value=0.0, value=st.session_state.hectareas, step=0.1, key='hectareas', help="Dejar en 0 si no se aplica o no se conoce el dato.")
     
-    # Coordenadas ELIMINADAS
-
     st.divider()
 
     # --- NAVEGACIÓN POR PESTAÑAS ---
@@ -478,6 +501,7 @@ def render_calculadora_y_graficos():
                 # Obtener el precio por defecto para precargar el input
                 precio_default = current_species_info.get(especie_sel, {}).get('Precio_Plantón', 0.0)
                 
+                # Lógica para precargar el precio del plantón al cambiar la especie
                 if especie_sel != st.session_state.get('last_especie_sel') or st.session_state.get('first_run_form_lote', True):
                     st.session_state.precio_planton_input = precio_default
                     st.session_state.last_especie_sel = especie_sel
@@ -513,8 +537,26 @@ def render_calculadora_y_graficos():
                     value=int(st.session_state.altura_slider) 
                 )
                 
-                # 3. Años Plantados
-                st.number_input("Años Plantados (Edad del lote)", min_value=0, value=st.session_state.anios_plantados_input, step=1, key='anios_plantados_input')
+                # 3. RIEGO CONTROLADO (NUEVO)
+                riego_activo = st.checkbox(
+                    "✅ Proyecto con Riego Controlado (Contabilizar Agua y Costo)",
+                    value=st.session_state.riego_controlado_input,
+                    key='riego_controlado_input',
+                    help="Active esta opción para incluir el costo y consumo de agua. Si no se activa, el costo de agua es cero."
+                )
+                
+                # Años Plantados (Se mantiene editable, la lógica de costo lo ignora si no hay riego)
+                anios_input = st.number_input(
+                    "Años Plantados (Edad del lote)", 
+                    min_value=0, 
+                    value=st.session_state.anios_plantados_input, 
+                    step=1, 
+                    key='anios_plantados_input', 
+                    help="Usado para calcular el costo acumulado de agua (si el riego es controlado) y para la proyección de crecimiento."
+                )
+                if not riego_activo:
+                    st.info("💧 Riego NO controlado: el costo y consumo de agua no se contabilizarán en este lote.")
+
 
                 # 4. Datos de Densidad/Agua (Manual si aplica)
                 if especie_sel == 'Densidad/Datos Manuales':
@@ -522,7 +564,17 @@ def render_calculadora_y_graficos():
                     st.markdown("##### ✍️ Ingrese Datos Manuales de Densidad y Consumo de Agua")
                     col_dens, col_agua = st.columns(2)
                     col_dens.number_input("Densidad (ρ) (g/cm³)", min_value=0.001, value=st.session_state.densidad_manual_input, step=0.05, format="%.3f", key='densidad_manual_input')
-                    col_agua.number_input("Consumo Agua Unitario (L/año)", min_value=0.0, value=st.session_state.consumo_agua_manual_input, step=100.0, key='consumo_agua_manual_input')
+                    
+                    agua_default = st.session_state.consumo_agua_manual_input
+                    
+                    col_agua.number_input(
+                        "Consumo Agua Unitario (L/año)", 
+                        min_value=0.0, 
+                        value=agua_default, 
+                        step=100.0, 
+                        key='consumo_agua_manual_input',
+                        help="Consumo de agua por árbol al año. Si el riego es NO controlado, este valor se ignora para el costo y consumo total, pero se registra."
+                    )
                 else:
                     st.info(f"Usando valores por defecto para {especie_sel}: Densidad: **{current_species_info[especie_sel]['Densidad']} g/cm³** | Agua: **{current_species_info[especie_sel]['Agua_L_Anio']} L/año**.")
                     
@@ -606,7 +658,7 @@ def render_calculadora_y_graficos():
                 col_costo.plotly_chart(fig_costo, use_container_width=True)
             
             with col_agua:
-                fig_agua = px.bar(df_graficos, x='Especie', y='Consumo_Agua_Total_L', title='Consumo Agua Acumulado por Especie (Litros)', color='Consumo_Agua_Total_L', color_continuous_scale=px.colors.sequential.Agsunset)
+                fig_agua = px.bar(df_graficos, x='Especie', y='Consumo_Agua_Total_L', title='Consumo Agua Anual por Especie (Litros)', color='Consumo_Agua_Total_L', color_continuous_scale=px.colors.sequential.Agsunset)
                 col_agua.plotly_chart(fig_agua, use_container_width=True)
                 
             st.markdown("---")
@@ -627,6 +679,7 @@ def render_calculadora_y_graficos():
         if df_inventario_completo.empty:
             st.warning("No hay datos en el inventario para mostrar el detalle técnico.")
         else:
+            # Lista de lotes con índice para selección
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles)" 
                 for i, row in enumerate(st.session_state.inventario_list) 
@@ -639,6 +692,7 @@ def render_calculadora_y_graficos():
             detalle_markdown = fila_lote['Detalle Cálculo']
             
             st.markdown(f"### Detalles Técnicos y Fórmulas para {lote_seleccionado}")
+            # El uso de st.markdown con $$ dentro del string activa MathJax para la visualización correcta
             st.markdown(detalle_markdown)
 
 
@@ -712,73 +766,142 @@ def render_calculadora_y_graficos():
                 st.warning("Simulación no ejecutada o lote sin datos.")
 
 
-# Función render_mapa ELIMINADA
-
+# NUEVA FUNCIÓN PARA EQUIVALENCIAS AMBIENTALES
+def render_equivalencias_ambientales(co2e_proyecto_ton):
+    """Muestra las equivalencias ambientales de la captura total del proyecto."""
+    st.title("4.2. Equivalencias Ambientales")
+    st.info(f"La captura total de CO₂e de su proyecto es de **{co2e_proyecto_ton:,.2f} Toneladas**.")
+    
+    if co2e_proyecto_ton <= 0:
+        st.warning("No hay CO₂e capturado en el inventario para calcular equivalencias. Complete el inventario en la sección 1.")
+        return
+        
+    st.subheader("La captura de carbono de su proyecto equivale a:")
+    
+    data = []
+    
+    for metrica, factor_unitario in EQUIVALENCIAS_TON_CO2E.items():
+        equivalencia = co2e_proyecto_ton * factor_unitario
+        unidad = metrica.split('(')[1].replace(')', '')
+        metrica_display = metrica.split('(')[0].strip()
+        
+        data.append({
+            'Métrica': metrica_display,
+            'Equivalencia': equivalencia,
+            'Unidad': unidad,
+            'Factor_Base': factor_unitario
+        })
+        
+    df_equivalencias = pd.DataFrame(data)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric(
+            "🚗 Kilómetros no conducidos",
+            f"{df_equivalencias.loc[df_equivalencias['Métrica'] == 'Kilómetros de Viaje en Auto', 'Equivalencia'].iloc[0]:,.0f} km"
+        )
+        st.metric(
+            "💡 Bombillos LED instalados (por un año)",
+            f"{df_equivalencias.loc[df_equivalencias['Métrica'] == 'Bombillos LED', 'Equivalencia'].iloc[0]:,.0f} unidades"
+        )
+    with col2:
+        st.metric(
+            "📱 Cargas de Smartphone",
+            f"{df_equivalencias.loc[df_equivalencias['Métrica'] == 'Teléfonos Inteligentes Cargados', 'Equivalencia'].iloc[0]:,.0f} unidades"
+        )
+        st.metric(
+            "🛢️ Barriles de Petróleo no consumidos",
+            f"{df_equivalencias.loc[df_equivalencias['Métrica'] == 'Barriles de Petróleo Consumidos', 'Equivalencia'].iloc[0]:,.1f} unidades"
+        )
+        
+    st.markdown("---")
+    st.markdown("##### Detalle de Cálculo")
+    st.dataframe(
+        df_equivalencias[['Métrica', 'Factor_Base', 'Equivalencia']].style.format({
+            'Factor_Base': '{:,.0f}',
+            'Equivalencia': '{:,.2f}'
+        }).set_caption("Factor Base: Unidad por 1 Ton CO2e"), 
+        column_order=['Métrica', 'Factor_Base', 'Equivalencia'], 
+        hide_index=True,
+        use_container_width=True
+    )
 
 def render_gap_cpassa():
-    """Análisis de brecha (GAP) entre la captura del proyecto y la Huella de Carbono Corporativa (HCC)."""
-    st.title("4. GAP (Análisis de Brecha) vs. Huella Corporativa (CPSSA)")
+    """Contiene la lógica de GAP y Equivalencias, usando pestañas."""
     
     df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
     
-    co2e_proyecto_miles_ton = co2e_proyecto_ton / 1000.0
+    # NUEVA ESTRUCTURA DE PÁGINAS DENTRO DE GAP
+    st.title("4. Análisis GAP y Equivalencias Ambientales")
+    tab_gap, tab_eq = st.tabs(["📊 Análisis de Brecha (GAP)", "💡 Equivalencias Ambientales"])
     
-    if co2e_proyecto_miles_ton <= 0:
-        st.warning("⚠️ El inventario del proyecto debe tener CO2e registrado (sección 1) para realizar este análisis.")
-        return
+    with tab_gap:
+        st.subheader("4.1. Análisis de Brecha vs. Huella Corporativa (CPSSA)")
         
-    st.subheader("Selección de Sede y Análisis")
-    
-    sede_sel = st.selectbox("Seleccione la Sede (Huella Corporativa)", list(HUELLA_CORPORATIVA.keys()))
-    
-    emisiones_sede_miles_ton = HUELLA_CORPORATIVA[sede_sel]
-    
-    st.markdown("---")
-    
-    col_sede, col_proyecto = st.columns(2)
-    
-    with col_sede:
-        st.metric(f"Emisiones Anuales de '{sede_sel}' (**Miles de Ton CO2e**)", f"**{emisiones_sede_miles_ton:,.2f} Miles tCO₂e**")
+        co2e_proyecto_miles_ton = co2e_proyecto_ton / 1000.0
         
-    with col_proyecto:
-        st.metric("Captura de CO₂e del Proyecto (**Miles de Ton CO2e**)", f"**{co2e_proyecto_miles_ton:,.2f} Miles tCO₂e**")
+        if co2e_proyecto_miles_ton < 0:
+             # Dejar que continúe para mostrar la advertencia
+             pass
+        
+        st.text("Selección de Sede y Análisis")
+        
+        sede_sel = st.selectbox("Sede de la Huella Corporativa", list(HUELLA_CORPORATIVA.keys()), key='sede_gap')
+        
+        emisiones_sede_miles_ton = HUELLA_CORPORATIVA[sede_sel]
+        
+        st.markdown("---")
+        
+        col_sede, col_proyecto = st.columns(2)
+        
+        with col_sede:
+            st.metric(f"Emisiones Anuales de '{sede_sel}' (**Miles de Ton CO2e**)", f"**{emisiones_sede_miles_ton:,.2f} Miles tCO₂e**")
+            
+        with col_proyecto:
+            st.metric("Captura de CO₂e del Proyecto (**Miles de Ton CO2e**)", f"**{co2e_proyecto_miles_ton:,.2f} Miles tCO₂e**")
 
-    st.markdown("---")
-    
-    brecha_miles_ton = emisiones_sede_miles_ton - co2e_proyecto_miles_ton
-    porcentaje_compensado = (co2e_proyecto_miles_ton / emisiones_sede_miles_ton) * 100 if emisiones_sede_miles_ton > 0 else 0
-    
-    st.subheader("Resultado del Análisis de Brecha (GAP)")
-    
-    st.metric(
-        "Gap (Emisiones - Captura)", 
-        f"**{brecha_miles_ton:,.2f} Miles tCO₂e**", 
-        delta=f"{porcentaje_compensado:,.2f}% Compensado",
-        delta_color="inverse" if porcentaje_compensado > 100 else "normal"
-    )
-    
-    if brecha_miles_ton > 0:
-        st.warning(f"⚠️ Su captura de carbono actual cubre el **{porcentaje_compensado:,.2f}%** de las emisiones de **{sede_sel}**. Se requiere una captura adicional de **{brecha_miles_ton:,.2f} Miles tCO₂e** para compensar totalmente.")
-    elif brecha_miles_ton <= 0:
-        st.success(f"✅ ¡Felicidades! La captura de carbono del proyecto **supera** las emisiones de **{sede_sel}** en **{-brecha_miles_ton:,.2f} Miles tCO₂e**.")
+        st.markdown("---")
         
-    df_comparacion = pd.DataFrame({
-        'Categoría': [f'Emisiones de {sede_sel}', 'Captura del Proyecto', 'Brecha (GAP)'],
-        'Valor (Miles tCO₂e)': [emisiones_sede_miles_ton, co2e_proyecto_miles_ton, brecha_miles_ton],
-        'Tipo': ['Emisiones', 'Captura', 'Diferencia']
-    })
-    
-    fig_gap = px.bar(
-        df_comparacion, 
-        y='Categoría', 
-        x='Valor (Miles tCO₂e)', 
-        color='Tipo', 
-        orientation='h',
-        title='Comparación: Emisiones vs. Captura de Carbono'
-    )
-    st.plotly_chart(fig_gap, use_container_width=True)
-    
+        brecha_miles_ton = emisiones_sede_miles_ton - co2e_proyecto_miles_ton
+        porcentaje_compensado = (co2e_proyecto_miles_ton / emisiones_sede_miles_ton) * 100 if emisiones_sede_miles_ton > 0 else 0
+        
+        st.subheader("Resultado del Análisis de Brecha (GAP)")
+        
+        st.metric(
+            "Gap (Emisiones - Captura)", 
+            f"**{brecha_miles_ton:,.2f} Miles tCO₂e**", 
+            delta=f"{porcentaje_compensado:,.2f}% Compensado",
+            delta_color="inverse" if porcentaje_compensado > 100 else "normal"
+        )
+        
+        if co2e_proyecto_miles_ton == 0:
+            st.info("Aún no hay captura de CO₂e registrada para comparar. Complete el inventario en la sección 1.")
+        elif brecha_miles_ton > 0:
+            st.warning(f"⚠️ Su captura de carbono actual cubre el **{porcentaje_compensado:,.2f}%** de las emisiones de **{sede_sel}**. Se requiere una captura adicional de **{brecha_miles_ton:,.2f} Miles tCO₂e** para compensar totalmente.")
+        elif brecha_miles_ton <= 0:
+            st.success(f"✅ ¡Felicidades! La captura de carbono del proyecto **supera** las emisiones de **{sede_sel}** en **{-brecha_miles_ton:,.2f} Miles tCO₂e**.")
+            
+        df_comparacion = pd.DataFrame({
+            'Categoría': [f'Emisiones de {sede_sel}', 'Captura del Proyecto', 'Brecha (GAP)'],
+            'Valor (Miles tCO₂e)': [emisiones_sede_miles_ton, co2e_proyecto_miles_ton, brecha_miles_ton],
+            'Tipo': ['Emisiones', 'Captura', 'Diferencia']
+        })
+        
+        fig_gap = px.bar(
+            df_comparacion, 
+            y='Categoría', 
+            x='Valor (Miles tCO₂e)', 
+            color='Tipo', 
+            orientation='h',
+            title='Comparación: Emisiones vs. Captura de Carbono'
+        )
+        st.plotly_chart(fig_gap, use_container_width=True)
+        
+    with tab_eq:
+        render_equivalencias_ambientales(co2e_proyecto_ton)
+
     
 def render_gestion_especie():
     """Permite al usuario ver y editar los coeficientes de las especies."""
@@ -827,10 +950,9 @@ def main_app():
         st.markdown("---")
         st.subheader("Menú de Navegación")
         
-        # '3. Mapa' ELIMINADO de las opciones
         options = [
             "1. Cálculo de Captura", 
-            "4. GAP CPSSA",
+            "4. GAP CPSSA", # Contiene las pestañas de GAP y Equivalencias
             "5. Gestión de Especie"
         ]
         
@@ -860,8 +982,6 @@ def main_app():
     
     if selection == "1. Cálculo de Captura":
         render_calculadora_y_graficos()
-    # elif selection == "3. Mapa": ELIMINADO
-    #     render_mapa()
     elif selection == "4. GAP CPSSA":
         render_gap_cpassa()
     elif selection == "5. Gestión de Especie":
