@@ -5,10 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import io
 import json
-import re
+import re # ¡CORRECCIÓN APLICADA: Módulo de expresiones regulares añadido!
 
 # --- CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="Gestión de Soluciones Basadas en la Naturaleza(SbN)", layout="wide", page_icon="🌳")
+st.set_page_config(page_title="Plataforma de Gestión NBS", layout="wide", page_icon="🌳")
 
 # --- CONSTANTES GLOBALES Y BASES DE DATOS ---
 FACTOR_CARBONO = 0.47
@@ -170,9 +170,8 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     co2e_total = carbono_total * FACTOR_CO2E
     
     # Generación del detalle técnico para la pestaña 3
-    # NOTA CRÍTICA: Se corrige el formato de string para evitar la corrupción al renderizar
     detalle += f"### Valores de Entrada\n"
-    detalle += f"* **Densidad ($\\rho$):** `{rho:.3f} g/cm³`\n"
+    detalle += f"* **Densidad (ρ):** `{rho:.3f} g/cm³`\n"
     detalle += f"* **DAP (D):** `{dap_cm:.2f} cm`\n"
     detalle += f"* **Altura (H):** `{altura_m:.2f} m`\n\n"
     
@@ -430,54 +429,11 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
     processed_data = output.getvalue()
     return processed_data
 
-# --- FUNCIÓN NUEVA: EQUIVALENCIAS AMBIENTALES ---
-def render_equivalencias_ambientales(co2e_ton):
-    """Muestra indicadores de equivalencia ambiental con un diseño mejorado."""
-    st.subheader("📊 Equivalencias Ambientales de la Captura Total")
-    
-    if co2e_ton <= 0:
-        st.info("Aún no hay suficiente CO₂e capturado para generar equivalencias.")
-        return
-
-    # Factores de Equivalencia (Ejemplos genéricos)
-    AUTO_GASOLINA_ANUAL = 4.6 * 1000 # 4.6 Ton CO2e por auto/año (EE. UU.)
-    CASA_ELECTRICIDAD_ANUAL = 10.0 # 10 Ton CO2e por casa/año (Estimado)
-    CELDA_COMBUSTIBLE = 0.00035 # Ton CO2e por litro de gasolina (Aprox)
-    VUELOS_NY_SF = 0.8 # Ton CO2e por vuelo redondo NY-SF (Aprox)
-
-    equivalencias = {
-        "🚗 Vehículos de Gasolina Retirados por 1 Año": co2e_ton / AUTO_GASOLINA_ANUAL,
-        "🏠 Electricidad Anual de Hogares Evitada": co2e_ton / CASA_ELECTRICIDAD_ANUAL,
-        "✈️ Vuelos Redondos (NY-SF) Compensados": co2e_ton / VUELOS_NY_SF
-    }
-
-    cols = st.columns(len(equivalencias))
-    
-    emojis = ["🚗", "🏠", "✈️"]
-    
-    st.markdown("---")
-    
-    for i, (descripcion, valor) in enumerate(equivalencias.items()):
-        
-        # El valor se calcula y luego se redondea para la presentación
-        valor_presentacion = round(valor, 2) if valor >= 1 else round(valor, 4)
-        
-        with cols[i]:
-            st.metric(
-                label=f"{emojis[i]} {descripcion}",
-                value=f"{valor_presentacion:,.0f}" if valor >= 1 else f"{valor_presentacion:,.2f}",
-                delta=f"Equivalente a {descripcion.split('(')[0].strip()}"
-            )
-            
-    st.markdown("---")
-
-
 # --- FUNCIONES DE VISUALIZACIÓN ---
 
 def render_calculadora_y_graficos():
     """Función principal para la sección de cálculo y gráficos."""
-    # CAMBIO 1: Título Principal
-    st.title("Calculadora de Captura de Carbono👣, Gestión de Inversión💰 y Consumo Hídrico💧")
+    st.title("1. Cálculo de Captura de Carbono, Inversión y Recursos")
 
     current_species_info = get_current_species_info()
     df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
@@ -498,11 +454,10 @@ def render_calculadora_y_graficos():
     st.divider()
 
     # --- NAVEGACIÓN POR PESTAÑAS ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ Datos y Registro", "📈 Visor de Gráficos", "🔬 Detalle Técnico", "🚀 Potencial de Crecimiento", "🌍 Equivalencias Ambientales"])
+    tab1, tab2, tab3, tab4 = st.tabs(["➕ Datos y Registro", "📈 Visor de Gráficos", "🔬 Detalle Técnico", "🚀 Potencial de Crecimiento"])
     
     with tab1:
-        # CAMBIO 2: Subtítulo
-        st.markdown("## Registro de Lotes📝")
+        st.markdown("## 1. Registro de Lotes")
         col_form, col_totales = st.columns([2, 1])
 
         with col_form:
@@ -633,7 +588,7 @@ def render_calculadora_y_graficos():
             )
 
     with tab2:
-        st.markdown("## 📈 Visor de Gráficos")
+        st.markdown("## 2. Visor de Gráficos")
         if df_inventario_completo.empty:
             st.warning("No hay datos en el inventario para generar gráficos.")
         else:
@@ -669,7 +624,7 @@ def render_calculadora_y_graficos():
 
 
     with tab3:
-        st.markdown("## 🔬 Detalle Técnico de Cálculo por Lote")
+        st.markdown("## 3. Detalle Técnico de Cálculo por Lote")
         if df_inventario_completo.empty:
             st.warning("No hay datos en el inventario para mostrar el detalle técnico.")
         else:
@@ -681,19 +636,23 @@ def render_calculadora_y_graficos():
             lote_seleccionado = st.selectbox("Seleccione el Lote para el Detalle:", lotes_info)
             lote_index = lotes_info.index(lote_seleccionado)
             
-            fila_lote = df_inventario_completo.iloc[lote_index]
-            detalle_markdown = fila_lote['Detalle Cálculo']
+            # INICIO CORRECCIÓN DE EXTRACCIÓN Y LIMPIEZA DE TEXTO (para evitar TypeError y limpiar el encabezado)
+            
+            # Acceso directo a la celda para forzar el valor (string)
+            detalle_markdown = df_inventario_completo.iloc[lote_index, df_inventario_completo.columns.get_loc('Detalle Cálculo')]
             
             st.markdown(f"### Detalles Técnicos y Fórmulas para {lote_seleccionado}")
             
-            # CORRECCIÓN CRÍTICA: Se limpia el string de 'detalle_markdown' de cualquier residuo antes de renderizar
             # Se usa re.sub para eliminar cualquier patrón de "Detalle Cálculo..." si se llegara a duplicar
             detalle_limpio = re.sub(r"Detalle Cálculo.*?\n", "", detalle_markdown, flags=re.DOTALL)
             
             st.markdown(detalle_limpio)
-            
+
+            # FIN CORRECCIÓN DE EXTRACCIÓN Y LIMPIEZA DE TEXTO
+
+
     with tab4:
-        st.markdown("## 🚀 Simulación de Crecimiento (Años)")
+        st.markdown("## 4. Simulación de Crecimiento (Años)")
         if df_inventario_completo.empty:
             st.warning("No hay datos en el inventario para simular el crecimiento.")
         else:
@@ -760,10 +719,9 @@ def render_calculadora_y_graficos():
                 st.plotly_chart(fig_dap_alt, use_container_width=True)
             else:
                 st.warning("Simulación no ejecutada o lote sin datos.")
-                
-    with tab5:
-        # CAMBIO 5: Se usa la nueva función para mejor diseño
-        render_equivalencias_ambientales(co2e_proyecto_ton)
+
+
+# Función render_mapa ELIMINADA
 
 
 def render_gap_cpassa():
@@ -790,11 +748,10 @@ def render_gap_cpassa():
     col_sede, col_proyecto = st.columns(2)
     
     with col_sede:
-        # CAMBIO 4: Eliminación de asteriscos para mejorar el formato visual
-        st.metric(f"Emisiones Anuales de '{sede_sel}' (Miles de Ton CO2e)", f"{emisiones_sede_miles_ton:,.2f} Miles tCO₂e")
+        st.metric(f"Emisiones Anuales de '{sede_sel}' (**Miles de Ton CO2e**)", f"**{emisiones_sede_miles_ton:,.2f} Miles tCO₂e**")
         
     with col_proyecto:
-        st.metric("Captura de CO₂e del Proyecto (Miles de Ton CO2e)", f"{co2e_proyecto_miles_ton:,.2f} Miles tCO₂e")
+        st.metric("Captura de CO₂e del Proyecto (**Miles de Ton CO2e**)", f"**{co2e_proyecto_miles_ton:,.2f} Miles tCO₂e**")
 
     st.markdown("---")
     
@@ -815,43 +772,19 @@ def render_gap_cpassa():
     elif brecha_miles_ton <= 0:
         st.success(f"✅ ¡Felicidades! La captura de carbono del proyecto **supera** las emisiones de **{sede_sel}** en **{-brecha_miles_ton:,.2f} Miles tCO₂e**.")
         
-    # CAMBIO 4: Reemplazo del gráfico de barras por gráfico de embudo (Funnel Plot) para mejor visualización del GAP
-    st.markdown("---")
-    st.subheader("Visualización del Flujo de Emisiones y Captura")
-
-    data_funnel = [
-        ('Emisiones de la Sede', emisiones_sede_miles_ton),
-        ('Captura del Proyecto', co2e_proyecto_miles_ton),
-    ]
-
-    # Ajuste para visualizar la brecha como una "diferencia" en el flujo
-    # Si hay brecha positiva (sobran emisiones), se muestra la captura restando a las emisiones.
-    if brecha_miles_ton > 0:
-        data_funnel.append(('Brecha (Emisiones Pendientes)', brecha_miles_ton))
-        labels = [f'Emisiones de {sede_sel}', 'Captura del Proyecto', 'Brecha (Emisiones Pendientes)']
-        values = [emisiones_sede_miles_ton, co2e_proyecto_miles_ton, brecha_miles_ton]
-        colors = ['red', 'green', 'lightcoral']
-    # Si hay superávit (brecha negativa), se muestra el superávit como un adicional a la captura
-    else:
-        labels = [f'Emisiones de {sede_sel}', 'Captura del Proyecto']
-        values = [emisiones_sede_miles_ton, co2e_proyecto_miles_ton]
-        colors = ['red', 'green']
-        if co2e_proyecto_miles_ton > emisiones_sede_miles_ton:
-             st.info(f"El proyecto genera un **Superávit de Captura** de **{-brecha_miles_ton:,.2f} Miles tCO₂e**.")
+    df_comparacion = pd.DataFrame({
+        'Categoría': [f'Emisiones de {sede_sel}', 'Captura del Proyecto', 'Brecha (GAP)'],
+        'Valor (Miles tCO₂e)': [emisiones_sede_miles_ton, co2e_proyecto_miles_ton, brecha_miles_ton],
+        'Tipo': ['Emisiones', 'Captura', 'Diferencia']
+    })
     
-    # Se utiliza Plotly Go para un Funnel más visual
-    fig_gap = go.Figure(data=[go.Funnel(
-        y=labels,
-        x=values,
-        textinfo="value+percent initial",
-        marker={"color": colors},
-        connector={"line": {"color": "gray", "dash": "dot", "width": 2}}
-    )])
-    
-    fig_gap.update_layout(
-        title_text='Flujo de Emisiones vs. Captura de Carbono (Miles tCO₂e)',
-        yaxis_title="Métrica",
-        xaxis_title="Valor (Miles tCO₂e)"
+    fig_gap = px.bar(
+        df_comparacion, 
+        y='Categoría', 
+        x='Valor (Miles tCO₂e)', 
+        color='Tipo', 
+        orientation='h',
+        title='Comparación: Emisiones vs. Captura de Carbono'
     )
     st.plotly_chart(fig_gap, use_container_width=True)
     
