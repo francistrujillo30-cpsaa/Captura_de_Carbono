@@ -35,13 +35,7 @@ DENSIDADES_BASE = {
     # Usaremos Densidad Básica como Densidad (ρ) para el potencial
     # Valores de Agua y Precio por defecto si no se indican.
     # Eucalipto Torrellana (Corymbia torelliana) - Actualizado con la tabla (DAP, Altura, Tiempo)
-    'Eucalipto Torrellana (Corymbia torelliana) [Tabla]': {'Densidad': 0.68, 'Agua_L_Anio': 1500, 'Precio_Plantón': 5.00, 'DAP_Max': 43.0, 'Altura_Max': 30.0, 'Tiempo_Max_Anios': 15}, 
-    # Majoe (Hibiscus tiliaceus) - Actualizado con la tabla (DAP, Altura, Tiempo)
-    'Majoe (Hibiscus tiliaceus) [Tabla]': {'Densidad': 0.55, 'Agua_L_Anio': 1200, 'Precio_Plantón': 5.00, 'DAP_Max': 30.0, 'Altura_Max': 12.0, 'Tiempo_Max_Anios': 20},
-    # Molle (Schinus molle) - Actualizado con la tabla (DAP, Altura, Tiempo)
-    'Molle (Schinus molle) [Tabla]': {'Densidad': 0.73, 'Agua_L_Anio': 900, 'Precio_Plantón': 6.00, 'DAP_Max': 65.0, 'Altura_Max': 13.0, 'Tiempo_Max_Anios': 40},
-    # Algarrobo (Prosopis pallida) - Actualizado con la tabla (DAP, Altura, Tiempo)
-    'Algarrobo (Prosopis pallida) [Tabla]': {'Densidad': 0.80, 'Agua_L_Anio': 800, 'Precio_Plantón': 4.00, 'DAP_Max': 60.0, 'Altura_Max': 14.0, 'Tiempo_Max_Anios': 50},
+    
     'Shaina (Colubrina glandulosa Perkins)': {'Densidad': 0.63, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 40.0, 'Altura_Max': 20.0, 'Tiempo_Max_Anios': 28},
     'Limoncillo (Melicoccus bijugatus)': {'Densidad': 0.68, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 40.0, 'Altura_Max': 18.0, 'Tiempo_Max_Anios': 33},
     'Capirona (Calycophyllum decorticáns)': {'Densidad': 0.78, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 38.0, 'Altura_Max': 25.0, 'Tiempo_Max_Anios': 23},
