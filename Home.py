@@ -187,6 +187,15 @@ def recalcular_inventario_completo(inventario_list):
     if not inventario_list:
         all_cols = list(df_columns_types.keys()) + columnas_salida
         dtype_map = {**df_columns_types, **dict.fromkeys(columnas_salida, float)}
+        # La línea anterior es peligrosa porque establece 'Detalle Cálculo' a float.
+        # Mejor hacerlo manualmente y seguro:
+        dtype_map = {k: v for k, v in df_columns_types.items() if k in all_cols}
+        for col in columnas_salida:
+            if col != 'Detalle Cálculo':
+                dtype_map[col] = float
+            else:
+                dtype_map[col] = object # Dejarlo como objeto/string
+                
         dtype_map = {k: v for k, v in dtype_map.items() if k in all_cols}
         return pd.DataFrame(columns=all_cols).astype(dtype_map)
 
@@ -196,6 +205,7 @@ def recalcular_inventario_completo(inventario_list):
     df_calculado = df_base.copy()
     current_species_info = get_current_species_info() 
     
+    # Se elimina la columna 'Detalle Cálculo' si existe para evitar errores en el re-cálculo
     if 'Detalle Cálculo' in df_calculado.columns:
         df_calculado = df_calculado.drop(columns=['Detalle Cálculo'])
     
@@ -209,6 +219,7 @@ def recalcular_inventario_completo(inventario_list):
             df_calculado[col] = default_val
     
     for col in df_columns_numeric:
+        # Conversión a numeric y llenado de NaNs a 0
         df_calculado[col] = pd.to_numeric(df_calculado[col], errors='coerce').fillna(0)
     
     resultados_calculo = []
@@ -265,9 +276,22 @@ def recalcular_inventario_completo(inventario_list):
     df_resultados = pd.DataFrame(resultados_calculo)
     df_final = pd.concat([df_calculado.reset_index(drop=True), df_resultados], axis=1)
     
-    # 6. Aplicar tipos de datos para las columnas de salida
-    dtype_map = {col: float for col in columnas_salida if col in df_final.columns}
-    df_final = df_final.astype(dtype_map)
+    # 6. Aplicar tipos de datos para las columnas de salida - FIX: EXCLUIR 'Detalle Cálculo'
+    columnas_numericas_salida = [col for col in columnas_salida if col != 'Detalle Cálculo']
+    dtype_map = {col: float for col in columnas_numericas_salida if col in df_final.columns}
+    
+    # Asegurarse de que las columnas de entrada que son INT sigan siendo INT (Cantidad, Años Plantados)
+    for col in ['Cantidad', 'Años Plantados']:
+        if col in df_final.columns:
+            dtype_map[col] = 'Int64' # Uso de Int64 para manejar NaNs de forma segura, aunque ya se llenaron con 0
+            
+    try:
+        df_final = df_final.astype(dtype_map)
+    except Exception as e:
+        # Manejo de error más detallado en caso de que persista el problema
+        st.error(f"Error en la conversión final de tipos de datos. Posible dato inválido en las columnas numéricas. Detalles: {e}")
+        return pd.DataFrame(columns=list(df_columns_types.keys()) + columnas_salida)
+
 
     return df_final
 
