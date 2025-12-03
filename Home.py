@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import io
 import json
-import re # Necesario para la limpieza del detalle técnico
+import re 
 
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="Plataforma de Gestión NBS", layout="wide", page_icon="🌳")
@@ -137,23 +137,28 @@ def get_costo_total_seguro(df):
     return df['Costo Total Lote (S/)'].sum()
 
 def get_agua_total_seguro(df):
-    """Calcula la suma total de consumo de agua."""
+    """Calcula la suma total de consumo de agua (Anual)."""
     if df.empty or 'Consumo Agua Total Lote (L)' not in df.columns:
         return 0.0
     return df['Consumo Agua Total Lote (L)'].sum()
 
 
+# --- MODIFICACIÓN CLAVE: calcular_co2_arbol para retornar JSON de detalle ---
 def calcular_co2_arbol(rho, dap_cm, altura_m):
-    """Calcula la biomasa, carbono y CO2e por árbol en KILOGRAMOS y genera el detalle con fórmulas."""
-    detalle = ""
+    """
+    Calcula la biomasa, carbono y CO2e por árbol en KILOGRAMOS 
+    y genera un diccionario de detalle con fórmulas para su posterior uso en Excel.
+    """
     
     # 1. Validación de entradas
     if rho <= 0 or dap_cm <= 0 or altura_m <= 0:
-        detalle = "ERROR: Valores de entrada (DAP, Altura o Densidad) deben ser mayores a cero para el cálculo."
-        return 0.0, 0.0, 0.0, 0.0, detalle
+        detalle = {
+            "ERROR": "Valores de entrada (DAP, Altura o Densidad) deben ser mayores a cero para el cálculo."
+        }
+        return 0.0, 0.0, 0.0, 0.0, json.dumps(detalle)
         
     # Calcular AGB (Above-Ground Biomass) en kg
-    # Fórmula: AGB = 0.112 × (ρ × D² × H)^0.916 (Chave et al. 2014)
+    # Fórmula: AGB = AGB_FACTOR_A × (ρ × D² × H)^AGB_FACTOR_B (Chave et al. 2014)
     # rho: Densidad (g/cm³), dap_cm: Diámetro (cm), altura_m: Altura (m)
     agb_kg = AGB_FACTOR_A * ((rho * (dap_cm**2) * altura_m)**AGB_FACTOR_B)
     
@@ -169,39 +174,38 @@ def calcular_co2_arbol(rho, dap_cm, altura_m):
     # CO2 equivalente
     co2e_total = carbono_total * FACTOR_CO2E
     
-    # Generación del detalle técnico para la pestaña 3
-    # NOTA CRÍTICA: Se corrige el formato de string para evitar la corrupción al renderizar
-    detalle += f"### Valores de Entrada\n"
-    detalle += f"* **Densidad ($\\rho$):** `{rho:.3f} g/cm³`\n"
-    detalle += f"* **DAP (D):** `{dap_cm:.2f} cm`\n"
-    detalle += f"* **Altura (H):** `{altura_m:.2f} m`\n\n"
+    # Generación del detalle técnico como diccionario para convertir a JSON
+    detalle_calculo = {
+        "Inputs": [
+            {"Métrica": "Densidad (ρ)", "Valor": rho, "Unidad": "g/cm³"},
+            {"Métrica": "DAP (D)", "Valor": dap_cm, "Unidad": "cm"},
+            {"Métrica": "Altura (H)", "Valor": altura_m, "Unidad": "m"}
+        ],
+        "AGB_Aerea_kg": [
+            {"Paso": "Fórmula (Chave et al. 2014)", "Ecuación": f"AGB = {AGB_FACTOR_A} × (ρ × D² × H)^{AGB_FACTOR_B}"},
+            {"Paso": "Sustitución", "Ecuación": f"AGB = {AGB_FACTOR_A:.3f} × ({rho:.3f} × {dap_cm:.2f}² × {altura_m:.2f})^{AGB_FACTOR_B:.3f}"},
+            {"Paso": "Resultado AGB", "Valor": agb_kg, "Unidad": "kg"}
+        ],
+        "BGB_Subterranea_kg": [
+            {"Paso": "Fórmula", "Ecuación": f"BGB = AGB × {FACTOR_BGB_SECO}"},
+            {"Paso": "Sustitución", "Ecuación": f"BGB = {agb_kg:.4f} × {FACTOR_BGB_SECO}"},
+            {"Paso": "Resultado BGB", "Valor": bgb_kg, "Unidad": "kg"}
+        ],
+        "Biomasa_Total_kg": [
+            {"Paso": "Fórmula", "Ecuación": "Biomasa Total = AGB + BGB"},
+            {"Paso": "Resultado Biomasa Total", "Valor": biomasa_total, "Unidad": "kg"}
+        ],
+        "Carbono_kg": [
+            {"Paso": "Fórmula", "Ecuación": f"Carbono = Biomasa Total × {FACTOR_CARBONO}"},
+            {"Paso": "Resultado Carbono", "Valor": carbono_total, "Unidad": "kg"}
+        ],
+        "CO2e_kg": [
+            {"Paso": "Fórmula", "Ecuación": f"CO2e = Carbono × {FACTOR_CO2E}"},
+            {"Paso": "Resultado CO2e (Unitario)", "Valor": co2e_total, "Unidad": "kg"}
+        ]
+    }
     
-    detalle += f"## 1. Biomasa Aérea (AGB) por Árbol\n"
-    detalle += f"**Fórmula (kg):** $AGB = {AGB_FACTOR_A} \\times (\\rho \\times D^2 \\times H)^{AGB_FACTOR_B}$ (Chave et al. 2014)\n"
-    detalle += f"**Sustitución:** $AGB = {AGB_FACTOR_A:.3f} \\times ({rho:.3f} \\times {dap_cm:.2f}^2 \\times {altura_m:.2f})^{AGB_FACTOR_B:.3f}$\n"
-    detalle += f"**Resultado AGB (kg):** `{agb_kg:.4f}`\n\n"
-    
-    detalle += f"## 2. Biomasa Subterránea (BGB)\n"
-    detalle += f"**Fórmula (kg):** $BGB = AGB \\times {FACTOR_BGB_SECO}$\n"
-    detalle += f"**Sustitución:** $BGB = {agb_kg:.4f} \\times {FACTOR_BGB_SECO}$\n"
-    detalle += f"**Resultado BGB (kg):** `{bgb_kg:.4f}`\n\n"
-    
-    detalle += f"## 3. Biomasa Total (AGB + BGB)\n"
-    detalle += f"**Fórmula (kg):** $Biomasa Total = AGB + BGB$\n"
-    detalle += f"**Sustitución:** $Biomasa Total = {agb_kg:.4f} + {bgb_kg:.4f}$\n"
-    detalle += f"**Resultado Biomasa Total (kg):** `{biomasa_total:.4f}`\n\n"
-    
-    detalle += f"## 4. Carbono Capturado (C)\n"
-    detalle += f"**Fórmula (kg):** $C = Biomasa Total \\times {FACTOR_CARBONO}$\n"
-    detalle += f"**Sustitución:** $C = {biomasa_total:.4f} \\times {FACTOR_CARBONO}$\n"
-    detalle += f"**Resultado Carbono (kg):** `{carbono_total:.4f}`\n\n"
-    
-    detalle += f"## 5. CO2 Equivalente Capturado (CO2e)\n"
-    detalle += f"**Fórmula (kg):** $CO2e = C \\times {FACTOR_CO2E}$\n"
-    detalle += f"**Sustitución:** $CO2e = {carbono_total:.4f} \\times {FACTOR_CO2E}$\n"
-    detalle += f"**Resultado CO2e (kg):** `{co2e_total:.4f}`"
-    
-    return agb_kg, bgb_kg, biomasa_total, co2e_total, detalle
+    return agb_kg, bgb_kg, biomasa_total, co2e_total, json.dumps(detalle_calculo)
 
 
 # --- FUNCIÓN DE RECÁLCULO SEGURO (CRÍTICA) ---
@@ -240,12 +244,15 @@ def recalcular_inventario_completo(inventario_list):
     
     resultados_calculo = []
     
+    # --- Lógica de Riego Controlado (Checkbox) ---
+    riego_activado = st.session_state.get('riego_controlado_check', False)
+    
     for _, row in df_calculado.iterrows():
         rho = row['Densidad (ρ)']
         dap = row['DAP (cm)']
         altura = row['Altura (m)']
         cantidad = row['Cantidad']
-        consumo_agua_uni = row['Consumo Agua Unitario (L/año)'] 
+        consumo_agua_uni_base = row['Consumo Agua Unitario (L/año)'] 
         precio_planton_uni = row['Precio Plantón Unitario (S/)'] 
         años_plantados = row['Años Plantados'] 
 
@@ -259,21 +266,28 @@ def recalcular_inventario_completo(inventario_list):
 
         # 3. Costo y Agua
         costo_planton_lote = cantidad * precio_planton_uni
-        consumo_agua_lote_l = cantidad * consumo_agua_uni
         
-        # --- CÁLCULO ACUMULADO DEL AGUA (CORREGIDO) ---
+        # --- LÓGICA DE RIEGO CONDICIONAL ---
+        if riego_activado:
+            consumo_agua_uni = consumo_agua_uni_base
+            años_para_costo = años_plantados
+        else:
+            # Si el riego no está activado, el consumo de agua y su costo son CERO.
+            consumo_agua_uni = 0.0
+            años_para_costo = 0 
+            
+        consumo_agua_lote_l = cantidad * consumo_agua_uni
         
         # Calcular el costo de agua por UN AÑO (operación anual)
         volumen_agua_lote_m3_anual = consumo_agua_lote_l / FACTOR_L_A_M3
         costo_agua_anual_lote = volumen_agua_lote_m3_anual * PRECIO_AGUA_POR_M3
         
-        # Costo de agua acumulado: Costo Anual * Años Plantados
-        costo_agua_acumulado_lote = costo_agua_anual_lote * años_plantados
+        # Costo de agua acumulado: Costo Anual * Años Plantados (solo si riego_activado)
+        costo_agua_acumulado_lote = costo_agua_anual_lote * años_para_costo
         
         # Costo total = Costo Plantones (Inversión Inicial) + Costo Agua (Operación Acumulada)
         costo_total_lote = costo_planton_lote + costo_agua_acumulado_lote
-        
-        # --- FIN DE CÁLCULO ---
+        # --- FIN DE LÓGICA DE RIEGO CONDICIONAL ---
         
         resultados_calculo.append({
             'Biomasa Lote (Ton)': biomasa_lote_ton,
@@ -281,7 +295,7 @@ def recalcular_inventario_completo(inventario_list):
             'CO2e Lote (Ton)': co2e_lote_ton,
             'Consumo Agua Total Lote (L)': consumo_agua_lote_l,
             'Costo Total Lote (S/)': costo_total_lote, 
-            'Detalle Cálculo': detalle
+            'Detalle Cálculo': detalle # JSON string
         })
 
     # 4. Unir los resultados
@@ -315,6 +329,9 @@ def inicializar_estado_de_sesion():
         st.session_state.proyecto = "Proyecto Reforestación CPSSA"
     if 'hectareas' not in st.session_state:
         st.session_state.hectareas = 0.0
+    # --- NUEVA VARIABLE DE SESIÓN ---
+    if 'riego_controlado_check' not in st.session_state:
+        st.session_state.riego_controlado_check = False
         
     # Inicialización de inputs del formulario
     if 'especie_seleccionada' not in st.session_state: st.session_state.especie_seleccionada = list(DENSIDADES_BASE.keys())[0]
@@ -374,7 +391,7 @@ def agregar_lote():
         'Años Plantados': int(años),
         'Consumo Agua Unitario (L/año)': float(consumo_agua_unitario),
         'Precio Plantón Unitario (S/)': float(precio_planton_unitario), 
-        'Detalle Cálculo': detalle_calculo,
+        'Detalle Cálculo': detalle_calculo, # JSON string
         # 'Latitud' y 'Longitud' ELIMINADOS
     }
     
@@ -401,19 +418,20 @@ def limpiar_inventario():
     st.success("Inventario completamente limpiado.")
 
 
+# --- MODIFICACIÓN CLAVE: generar_excel_memoria para incluir hojas de detalle ---
 def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, total_co2e_ton, total_agua_l, total_costo):
-    """Genera el archivo Excel en memoria con el resumen y el inventario detallado."""
+    """Genera el archivo Excel en memoria con el resumen, el inventario detallado y el detalle de cálculo."""
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    # 1. Definir columnas a excluir (Solo 'Detalle Cálculo' ya que Lat/Lon fueron eliminados del DF)
+    # 1. Preparar Inventario Detallado (sin Detalle Cálculo JSON)
     cols_to_drop = ['Detalle Cálculo']
     df_inventario_download = df_inventario.drop(columns=cols_to_drop, errors='ignore')
-
-    df_inventario_download.to_excel(writer, sheet_name='Inventario Detallado', index=False)
+    df_inventario_download.to_excel(writer, sheet_name='1_Inventario Detallado', index=False)
     
+    # 2. Resumen del Proyecto
     df_resumen = pd.DataFrame({
-        'Métrica': ['Proyecto', 'Fecha', 'Hectáreas (ha)', 'Total Árboles', 'CO2e Total (Ton)', 'CO2e Total (Kg)', 'Agua Total (L)', 'Costo Total (S/)'], 
+        'Métrica': ['Proyecto', 'Fecha', 'Hectáreas (ha)', 'Total Árboles', 'CO2e Total (Ton)', 'CO2e Total (Kg)', 'Agua Total Anual (L)', 'Costo Total Acumulado (S/)'], 
         'Valor': [ 
             proyecto if proyecto else "Sin Nombre", 
             str(pd.Timestamp.today().normalize().date()), 
@@ -425,12 +443,66 @@ def generar_excel_memoria(df_inventario, proyecto, hectareas, total_arboles, tot
             f"S/{total_costo:,.2f}" 
         ]
     })
-    df_resumen.to_excel(writer, sheet_name='Resumen Proyecto', index=False)
+    df_resumen.to_excel(writer, sheet_name='2_Resumen Proyecto', index=False)
+    
+    # 3. Detalle de Cálculo (Evidencia) - Una hoja por lote
+    
+    for i, row in df_inventario.iterrows():
+        try:
+            detalle_json = row['Detalle Cálculo']
+            detalle_dict = json.loads(detalle_json)
+            
+            # Crear un DataFrame para el detalle de este lote
+            data_lote = []
+            
+            # Estructurar los inputs
+            for item in detalle_dict.get('Inputs', []):
+                data_lote.append(['INPUT', item['Métrica'], item['Valor'], item['Unidad'], ''])
+                
+            # Estructurar los pasos de cálculo
+            orden = ['AGB_Aerea_kg', 'BGB_Subterranea_kg', 'Biomasa_Total_kg', 'Carbono_kg', 'CO2e_kg']
+            seccion_nombres = {
+                'AGB_Aerea_kg': '1. Biomasa Aérea (AGB)', 
+                'BGB_Subterranea_kg': '2. Biomasa Subterránea (BGB)',
+                'Biomasa_Total_kg': '3. Biomasa Total', 
+                'Carbono_kg': '4. Carbono Capturado',
+                'CO2e_kg': '5. CO2 Equivalente Capturado'
+            }
+            
+            for key in orden:
+                data_lote.append([seccion_nombres[key], '---', '---', '---', '---']) # Separador
+                for item in detalle_dict.get(key, []):
+                    paso = item.get('Paso', '')
+                    ecuacion = item.get('Ecuación', item.get('Fórmula', ''))
+                    valor = item.get('Valor', '')
+                    unidad = item.get('Unidad', '')
+                    
+                    if valor != '':
+                        data_lote.append([seccion_nombres[key], paso, valor, unidad, ''])
+                    elif ecuacion != '':
+                        data_lote.append([seccion_nombres[key], paso, 'ECUACIÓN/SUSTITUCIÓN', '', ecuacion])
+            
+            df_detalle = pd.DataFrame(data_lote, columns=['Sección', 'Métrica/Paso', 'Valor', 'Unidad', 'Ecuación/Detalle'])
+            
+            sheet_name = f'3_Detalle_Lote_{i+1}'
+            if len(sheet_name) > 31: # Límite de nombre de hoja de Excel
+                sheet_name = f'3_Detalle_{i+1}'
+            
+            df_detalle.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+        except json.JSONDecodeError:
+            print(f"Error al decodificar JSON para el lote {i+1}")
+            continue
+        except Exception as e:
+            print(f"Error inesperado al generar hoja de detalle para el lote {i+1}: {e}")
+            continue
+
     writer.close()
     processed_data = output.getvalue()
     return processed_data
 
 # --- FUNCIÓN NUEVA: EQUIVALENCIAS AMBIENTALES ---
+# (Se mantiene igual, no necesita modificación)
 def render_equivalencias_ambientales(co2e_ton):
     """Muestra indicadores de equivalencia ambiental con un diseño mejorado."""
     st.subheader("📊 Equivalencias Ambientales de la Captura Total")
@@ -479,6 +551,16 @@ def render_calculadora_y_graficos():
     # CAMBIO 1: Título Principal
     st.title("Calculadora de Captura de Carbono👣, Gestión de Inversión💰 y Consumo Hídrico💧")
 
+    # --- Lógica de Riego Controlado (Checkbox) ---
+    st.markdown("## ⚙️ Configuración del Proyecto")
+    riego_controlado = st.checkbox(
+        "**Proyecto con Riego Controlado y Costo Operativo (Agua)**", 
+        value=st.session_state.riego_controlado_check, 
+        key='riego_controlado_check',
+        help="Marque esta opción para incluir el consumo de agua (Litros/año) y su costo (S/) acumulado basado en 'Años Plantados'."
+    )
+    st.divider()
+    
     current_species_info = get_current_species_info()
     df_inventario_completo = recalcular_inventario_completo(st.session_state.inventario_list)
     co2e_proyecto_ton = get_co2e_total_seguro(df_inventario_completo)
@@ -559,8 +641,17 @@ def render_calculadora_y_graficos():
                     value=int(st.session_state.altura_slider) 
                 )
                 
-                # 3. Años Plantados
-                st.number_input("Años Plantados (Edad del lote)", min_value=0, value=st.session_state.anios_plantados_input, step=1, key='anios_plantados_input')
+                # 3. Años Plantados (Ahora siempre visible, pero solo cuenta para costo si el riego está marcado)
+                st.number_input(
+                    "Años Plantados (Edad del lote)", 
+                    min_value=0, 
+                    value=st.session_state.anios_plantados_input, 
+                    step=1, 
+                    key='anios_plantados_input',
+                    help="Define la edad actual del lote, usada para calcular la acumulación de CO2e y el costo de agua acumulado (si el riego está activado)."
+                )
+                if not riego_controlado:
+                    st.info("⚠️ El costo del agua no se contabilizará, ya que la casilla 'Riego Controlado' no está marcada.")
 
                 # 4. Datos de Densidad/Agua (Manual si aplica)
                 if especie_sel == 'Densidad/Datos Manuales':
@@ -570,7 +661,9 @@ def render_calculadora_y_graficos():
                     col_dens.number_input("Densidad (ρ) (g/cm³)", min_value=0.001, value=st.session_state.densidad_manual_input, step=0.05, format="%.3f", key='densidad_manual_input')
                     col_agua.number_input("Consumo Agua Unitario (L/año)", min_value=0.0, value=st.session_state.consumo_agua_manual_input, step=100.0, key='consumo_agua_manual_input')
                 else:
-                    st.info(f"Usando valores por defecto para {especie_sel}: Densidad: **{current_species_info[especie_sel]['Densidad']} g/cm³** | Agua: **{current_species_info[especie_sel]['Agua_L_Anio']} L/año**.")
+                    agua_info = current_species_info[especie_sel]['Agua_L_Anio']
+                    info_agua_str = f"| Agua: **{agua_info} L/año**." if riego_controlado else "."
+                    st.info(f"Usando valores por defecto para {especie_sel}: Densidad: **{current_species_info[especie_sel]['Densidad']} g/cm³** {info_agua_str}")
                     
                 st.form_submit_button("➕ Añadir Lote al Inventario", on_click=agregar_lote)
 
@@ -580,8 +673,14 @@ def render_calculadora_y_graficos():
             
             st.metric("🌳 Total Árboles Registrados", f"{total_arboles_registrados:,.0f} Árboles")
             st.metric("🌱 Captura CO₂e (Anual)", f"{co2e_proyecto_ton:,.2f} Toneladas")
-            st.metric("💰 Costo Total (Acumulado)", f"S/{costo_proyecto_total:,.2f}") 
-            st.metric("💧 Consumo Agua Total (Anual)", f"{agua_proyecto_total:,.0f} Litros")
+            
+            # Etiqueta adaptada para reflejar el costo acumulado
+            costo_label = "💰 Costo Total (Acumulado) S/"
+            st.metric(costo_label, f"S/{costo_proyecto_total:,.2f}") 
+            
+            # Etiqueta adaptada para reflejar el consumo anual
+            agua_label = "💧 Consumo Agua Total (Anual) L"
+            st.metric(agua_label, f"{agua_proyecto_total:,.0f} Litros")
             
             if total_arboles_registrados > 0:
                 col_deshacer, col_limpiar = st.columns(2)
@@ -601,9 +700,9 @@ def render_calculadora_y_graficos():
                 col_excel.download_button(
                     label="📥 Descargar Excel",
                     data=excel_data,
-                    file_name=f'Reporte_CO2e_CPSSA_{pd.Timestamp.today().strftime("%Y%m%d")}.xlsx',
+                    file_name=f'Reporte_CO2e_NBS_{pd.Timestamp.today().strftime("%Y%m%d")}.xlsx',
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Genera un archivo Excel con el resumen y el detalle de cada lote."
+                    help="Genera un archivo Excel con el resumen, el detalle de cada lote y la evidencia del cálculo."
                 )
 
         st.markdown("---")
@@ -633,6 +732,7 @@ def render_calculadora_y_graficos():
             )
 
     with tab2:
+        # Gráficos (Se mantiene igual, solo usa el DF recalculado)
         st.markdown("## 📈 Visor de Gráficos")
         if df_inventario_completo.empty:
             st.warning("No hay datos en el inventario para generar gráficos.")
@@ -652,7 +752,7 @@ def render_calculadora_y_graficos():
                 col_costo.plotly_chart(fig_costo, use_container_width=True)
             
             with col_agua:
-                fig_agua = px.bar(df_graficos, x='Especie', y='Consumo_Agua_Total_L', title='Consumo Agua Acumulado por Especie (Litros)', color='Consumo_Agua_Total_L', color_continuous_scale=px.colors.sequential.Agsunset)
+                fig_agua = px.bar(df_graficos, x='Especie', y='Consumo_Agua_Total_L', title='Consumo Agua Anual por Especie (Litros)', color='Consumo_Agua_Total_L', color_continuous_scale=px.colors.sequential.Agsunset)
                 col_agua.plotly_chart(fig_agua, use_container_width=True)
                 
             st.markdown("---")
@@ -668,10 +768,11 @@ def render_calculadora_y_graficos():
                 st.plotly_chart(fig_arboles, use_container_width=True)
 
 
+    # --- MODIFICACIÓN CLAVE: Detalle Técnico (Ahora muestra la tabla de resumen del JSON) ---
     with tab3:
         st.markdown("## 🔬 Detalle Técnico de Cálculo por Lote")
         if df_inventario_completo.empty:
-            st.warning("No hay datos en el inventario para mostrar el detalle técnico.")
+            st.warning("No hay datos en el inventario para mostrar el detalle técnico. El detalle completo y descargable se encuentra en el archivo Excel (pestaña '📥 Descargar Excel').")
         else:
             lotes_info = [
                 f"Lote {i+1}: {row['Especie']} ({row['Cantidad']} árboles)" 
@@ -682,17 +783,43 @@ def render_calculadora_y_graficos():
             lote_index = lotes_info.index(lote_seleccionado)
             
             fila_lote = df_inventario_completo.iloc[lote_index]
-            detalle_markdown = fila_lote['Detalle Cálculo']
+            detalle_json = fila_lote['Detalle Cálculo']
             
-            st.markdown(f"### Detalles Técnicos y Fórmulas para {lote_seleccionado}")
+            st.markdown(f"### Resumen de Fórmulas y Evidencia para {lote_seleccionado}")
+            st.info("⚠️ Para el detalle completo con todas las fórmulas de sustitución, **descargue el archivo Excel** (Sección 1) que incluye una hoja por lote con la evidencia del cálculo de biomasa y carbono.")
             
-            # CORRECCIÓN CRÍTICA: Se limpia el string de 'detalle_markdown' de cualquier residuo antes de renderizar
-            # Se usa re.sub para eliminar cualquier patrón de "Detalle Cálculo..." si se llegara a duplicar
-            detalle_limpio = re.sub(r"Detalle Cálculo.*?\n", "", detalle_markdown, flags=re.DOTALL)
-            
-            st.markdown(detalle_limpio)
+            try:
+                detalle_dict = json.loads(detalle_json)
+                
+                # Crear tabla de resumen para Streamlit (más simple que el Excel)
+                data_resumen = []
+                
+                # Inputs
+                for item in detalle_dict.get('Inputs', []):
+                    data_resumen.append({'Paso': f"Input: {item['Métrica']}", 'Resultado': item['Valor'], 'Unidad': item['Unidad']})
+                
+                # Resultados clave (AGB, BGB, Biomasa, Carbono, CO2e)
+                resultados_clave = {
+                    'AGB_Aerea_kg': 'Biomasa Aérea (AGB)', 
+                    'BGB_Subterranea_kg': 'Biomasa Subterránea (BGB)',
+                    'Biomasa_Total_kg': 'Biomasa Total', 
+                    'Carbono_kg': 'Carbono Capturado',
+                    'CO2e_kg': 'CO2e Capturado (Unitario)'
+                }
+                
+                for key, label in resultados_clave.items():
+                    # Obtener el último paso, que es el resultado
+                    resultado_item = detalle_dict.get(key, [])[-1]
+                    data_resumen.append({'Paso': label, 'Resultado': resultado_item['Valor'], 'Unidad': resultado_item['Unidad']})
+                
+                df_resumen_calculo = pd.DataFrame(data_resumen)
+                st.dataframe(df_resumen_calculo, use_container_width=True)
+                
+            except json.JSONDecodeError:
+                st.error("Error al cargar el detalle técnico para este lote.")
             
     with tab4:
+        # Simulación de Crecimiento (Se mantiene igual)
         st.markdown("## 🚀 Simulación de Crecimiento (Años)")
         if df_inventario_completo.empty:
             st.warning("No hay datos en el inventario para simular el crecimiento.")
@@ -762,7 +889,7 @@ def render_calculadora_y_graficos():
                 st.warning("Simulación no ejecutada o lote sin datos.")
                 
     with tab5:
-        # CAMBIO 5: Se usa la nueva función para mejor diseño
+        # Equivalencias Ambientales (Se mantiene igual)
         render_equivalencias_ambientales(co2e_proyecto_ton)
 
 
