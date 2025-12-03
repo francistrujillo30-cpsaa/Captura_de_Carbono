@@ -381,6 +381,16 @@ def inicializar_estado_de_sesion():
         st.session_state.densidad_manual_input = 0.500
     if 'consumo_agua_manual_input' not in st.session_state:
         st.session_state.consumo_agua_manual_input = 1000.0
+    
+    # --- FIX: INITIALIZE MISSING KEYS QUE CAUSAN AttributeError ---
+    if 'precio_planton_input' not in st.session_state:
+        st.session_state.precio_planton_input = 5.00 # Valor inicial por defecto
+    if 'last_especie_sel' not in st.session_state:
+        st.session_state.last_especie_sel = None # Necesario para la lógica de actualización del precio
+    if 'first_run_form_lote' not in st.session_state:
+        st.session_state.first_run_form_lote = True # Necesario para la lógica de actualización del precio
+    # -----------------------------------------------------------
+
 
 def reiniciar_app_completo():
     for key in list(st.session_state.keys()):
@@ -436,8 +446,6 @@ def agregar_lote():
     st.session_state.inventario_list.append(nuevo_lote)
 
 # --- FUNCIONES DE VISUALIZACIÓN ---
-
-# ... (render_calculadora_y_graficos se mantiene igual, es muy largo para mostrar aquí, pero está intacto) ...
 
 def render_calculadora_y_graficos():
     """Función principal para la sección de cálculo y gráficos del progreso actual."""
