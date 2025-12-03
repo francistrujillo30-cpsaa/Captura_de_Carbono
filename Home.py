@@ -23,12 +23,35 @@ PRECIO_AGUA_POR_M3 = 3.0 # Precio fijo del m3 de agua en Perú (3 Soles)
 FACTOR_L_A_M3 = 1000 # 1 m3 = 1000 Litros
 
 # BASE DE DATOS INICIAL DE DENSIDADES, AGUA Y COSTO
-# [FIX: POTENCIAL MÁXIMO V2] Adición de DAP Máximo, Altura Máxima y Tiempo Máximo (bibliografía)
+# [MODIFICACIÓN] Adición de DAP Máximo, Altura Máxima y Tiempo Máximo (bibliografía)
 DENSIDADES_BASE = {
+    # --- Especies Originales (Ajustadas a nuevos campos) ---
     'Eucalipto Torrellana (Corymbia torelliana)': {'Densidad': 0.46, 'Agua_L_Anio': 1500, 'Precio_Plantón': 5.00, 'DAP_Max': 45.0, 'Altura_Max': 35.0, 'Tiempo_Max_Anios': 20}, 
     'Majoe (Hibiscus tiliaceus)': {'Densidad': 0.57, 'Agua_L_Anio': 1200, 'Precio_Plantón': 5.00, 'DAP_Max': 25.0, 'Altura_Max': 15.0, 'Tiempo_Max_Anios': 15}, 
     'Molle (Schinus molle)': {'Densidad': 0.44, 'Agua_L_Anio': 900, 'Precio_Plantón': 6.00, 'DAP_Max': 30.0, 'Altura_Max': 20.0, 'Tiempo_Max_Anios': 25},
     'Algarrobo (Prosopis pallida)': {'Densidad': 0.53, 'Agua_L_Anio': 800, 'Precio_Plantón': 4.00, 'DAP_Max': 40.0, 'Altura_Max': 18.0, 'Tiempo_Max_Anios': 30},
+    
+    # --- [NUEVAS ESPECIES AGREGADAS DE LA TABLA] ---
+    # Usaremos Densidad Básica como Densidad (ρ) para el potencial
+    # Valores de Agua y Precio por defecto si no se indican.
+    # Eucalipto Torrellana (Corymbia torelliana) - Actualizado con la tabla (DAP, Altura, Tiempo)
+    'Eucalipto Torrellana (Corymbia torelliana) [Tabla]': {'Densidad': 0.68, 'Agua_L_Anio': 1500, 'Precio_Plantón': 5.00, 'DAP_Max': 43.0, 'Altura_Max': 30.0, 'Tiempo_Max_Anios': 15}, 
+    # Majoe (Hibiscus tiliaceus) - Actualizado con la tabla (DAP, Altura, Tiempo)
+    'Majoe (Hibiscus tiliaceus) [Tabla]': {'Densidad': 0.55, 'Agua_L_Anio': 1200, 'Precio_Plantón': 5.00, 'DAP_Max': 30.0, 'Altura_Max': 12.0, 'Tiempo_Max_Anios': 20},
+    # Molle (Schinus molle) - Actualizado con la tabla (DAP, Altura, Tiempo)
+    'Molle (Schinus molle) [Tabla]': {'Densidad': 0.73, 'Agua_L_Anio': 900, 'Precio_Plantón': 6.00, 'DAP_Max': 65.0, 'Altura_Max': 13.0, 'Tiempo_Max_Anios': 40},
+    # Algarrobo (Prosopis pallida) - Actualizado con la tabla (DAP, Altura, Tiempo)
+    'Algarrobo (Prosopis pallida) [Tabla]': {'Densidad': 0.80, 'Agua_L_Anio': 800, 'Precio_Plantón': 4.00, 'DAP_Max': 60.0, 'Altura_Max': 14.0, 'Tiempo_Max_Anios': 50},
+    'Shaina (Colubrina glandulosa Perkins)': {'Densidad': 0.63, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 40.0, 'Altura_Max': 20.0, 'Tiempo_Max_Anios': 28},
+    'Limoncillo (Melicoccus bijugatus)': {'Densidad': 0.68, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 40.0, 'Altura_Max': 18.0, 'Tiempo_Max_Anios': 33},
+    'Capirona (Calycophyllum decorticáns)': {'Densidad': 0.78, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 38.0, 'Altura_Max': 25.0, 'Tiempo_Max_Anios': 23},
+    'Bolaina (Guazuma crinita)': {'Densidad': 0.48, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 25.0, 'Altura_Max': 20.0, 'Tiempo_Max_Anios': 10},
+    'Amasisa (Erythrina fusca)': {'Densidad': 0.38, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 33.0, 'Altura_Max': 15.0, 'Tiempo_Max_Anios': 15},
+    'Moena (Ocotea aciphylla)': {'Densidad': 0.58, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 65.0, 'Altura_Max': 33.0, 'Tiempo_Max_Anios': 45},
+    'Huayruro (Ormosia coccinea)': {'Densidad': 0.73, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 70.0, 'Altura_Max': 33.0, 'Tiempo_Max_Anios': 65},
+    'Paliperro (Miconia barbeyana Cogniaux)': {'Densidad': 0.58, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 40.0, 'Altura_Max': 20.0, 'Tiempo_Max_Anios': 28},
+    'Cedro (Cedrela odorata)': {'Densidad': 0.43, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 55.0, 'Altura_Max': 30.0, 'Tiempo_Max_Anios': 28},
+    'Guayacán (Guaiacum officinale)': {'Densidad': 0.54, 'Agua_L_Anio': 0.0, 'Precio_Plantón': 5.00, 'DAP_Max': 45.0, 'Altura_Max': 12.0, 'Tiempo_Max_Anios': 60},
 }
 
 
@@ -414,9 +437,11 @@ def inicializar_estado_de_sesion():
     if 'inventario_list' not in st.session_state:
         st.session_state.inventario_list = []
     if 'especies_bd' not in st.session_state:
-        # [FIX: POTENCIAL MÁXIMO V2] Adición de DAP Máximo, Altura Máxima y Tiempo Máximo (bibliografía)
+        # [MODIFICACIÓN] Ahora incluye todas las especies de DENSIDADES_BASE
         df_cols = ['Especie', 'DAP (cm)', 'Altura (m)', 'Consumo Agua (L/año)', 'Densidad (g/cm³)', 'Precio Plantón (S/)', 'DAP Máximo (cm)', 'Altura Máxima (m)', 'Tiempo Máximo (años)'] 
         data_rows = [
+            # Se usa una DAP y Altura inicial baja (5.0) para el campo de 'progresos' 
+            # de la tabla de gestión, pero se usan los valores de DENSIDADES_BASE para el potencial
             (name, 5.0, 5.0, data['Agua_L_Anio'], data['Densidad'], data['Precio_Plantón'], data['DAP_Max'], data['Altura_Max'], data['Tiempo_Max_Anios']) 
             for name, data in DENSIDADES_BASE.items()
         ]
@@ -431,7 +456,9 @@ def inicializar_estado_de_sesion():
         st.session_state.riego_controlado_check = False
         
     # Inicialización de inputs del formulario
-    if 'especie_seleccionada' not in st.session_state: st.session_state.especie_seleccionada = list(DENSIDADES_BASE.keys())[0]
+    # Se usa la primera clave para evitar errores si la lista cambia
+    first_species = next(iter(DENSIDADES_BASE.keys()), 'Densidad/Datos Manuales')
+    if 'especie_seleccionada' not in st.session_state: st.session_state.especie_seleccionada = first_species
     if 'cantidad_input' not in st.session_state: st.session_state.cantidad_input = 100
     if 'dap_slider' not in st.session_state: st.session_state.dap_slider = 5
     if 'altura_slider' not in st.session_state: st.session_state.altura_slider = 5
@@ -753,9 +780,10 @@ def render_calculadora_y_graficos():
                     col_dens.number_input("Densidad (ρ) (g/cm³)", min_value=0.001, value=st.session_state.densidad_manual_input, step=0.05, format="%.3f", key='densidad_manual_input')
                     col_agua.number_input("Consumo Agua Unitario (L/año)", min_value=0.0, value=st.session_state.consumo_agua_manual_input, step=100.0, key='consumo_agua_manual_input')
                 else:
+                    densidad_info = current_species_info[especie_sel]['Densidad']
                     agua_info = current_species_info[especie_sel]['Agua_L_Anio']
                     info_agua_str = f"| Agua: **{agua_info} L/año**." if riego_controlado else "."
-                    st.info(f"Usando valores por defecto para {especie_sel}: Densidad: **{current_species_info[especie_sel]['Densidad']} g/cm³** {info_agua_str}")
+                    st.info(f"Usando valores por defecto para {especie_sel}: Densidad: **{densidad_info} g/cm³** {info_agua_str}")
                     
                 st.form_submit_button("➕ Añadir Lote al Inventario", on_click=agregar_lote)
 
